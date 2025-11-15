@@ -1,28 +1,63 @@
 <template>
   <div v-if="isVisible" class="gitjump-overlay" @click="handleBackdropClick">
     <div class="gitjump-popup">
-      <h2>Hello Github</h2>
-      <button class="btn btn-primary">GitHub Button</button>
-      <span class="Label Label--success">Success Label</span>
+      <h2>Your Repositories</h2>
+
+      <div v-if="loading" class="status">Loading repos...</div>
+      <div v-else-if="error" class="status error">{{ error }}</div>
+      <div v-else-if="repos.length === 0" class="status">No repos found</div>
+
+      <ul v-else class="repos-list">
+        <li v-for="repo in repos" :key="repo.id" class="repo-item">
+          <a :href="repo.html_url" target="_blank" class="repo-link">
+            {{ repo.full_name }}
+          </a>
+          <span v-if="repo.description" class="repo-desc">{{ repo.description }}</span>
+        </li>
+      </ul>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue';
+import { getUserRepos, type GitHubRepo } from '@/shared/github-api';
 
 const isVisible = ref(false);
+const repos = ref<GitHubRepo[]>([]);
+const loading = ref(false);
+const error = ref('');
 
-function show() {
+async function show() {
   isVisible.value = true;
+  await fetchRepos();
 }
 
 function hide() {
   isVisible.value = false;
 }
 
-function toggle() {
-  isVisible.value = !isVisible.value;
+async function toggle() {
+  if (isVisible.value) {
+    hide();
+  } else {
+    await show();
+  }
+}
+
+async function fetchRepos() {
+  loading.value = true;
+  error.value = '';
+  repos.value = [];
+
+  try {
+    repos.value = await getUserRepos(10);
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Failed to fetch repos';
+    console.error('Failed to fetch repos:', e);
+  } finally {
+    loading.value = false;
+  }
 }
 
 function handleBackdropClick(e: MouseEvent) {
@@ -65,9 +100,64 @@ defineExpose({
 
 .gitjump-popup {
   background: white;
-  padding: 40px;
+  padding: 30px;
   border-radius: 8px;
-  font-size: 24px;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  max-width: 600px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.gitjump-popup h2 {
+  margin-top: 0;
+  margin-bottom: 20px;
+  font-size: 24px;
+}
+
+.status {
+  padding: 20px;
+  text-align: center;
+  color: #586069;
+}
+
+.status.error {
+  color: #d73a49;
+}
+
+.repos-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.repo-item {
+  padding: 12px;
+  border-bottom: 1px solid #e1e4e8;
+}
+
+.repo-item:last-child {
+  border-bottom: none;
+}
+
+.repo-item:hover {
+  background: #f6f8fa;
+}
+
+.repo-link {
+  font-weight: 600;
+  color: #0366d6;
+  text-decoration: none;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.repo-link:hover {
+  text-decoration: underline;
+}
+
+.repo-desc {
+  font-size: 14px;
+  color: #586069;
+  display: block;
 }
 </style>
