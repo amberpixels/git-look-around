@@ -2,7 +2,7 @@ import { MessageType } from '@/shared/messages';
 import type { ExtensionMessage } from '@/shared/messages';
 
 export default defineBackground(() => {
-  console.log('Gitjump background initialized', { id: browser.runtime.id });
+  console.error('Gitjump background initialized', { id: browser.runtime.id });
 
   // Listen for keyboard command
   browser.commands.onCommand.addListener((command) => {

@@ -6,12 +6,15 @@
       <h2>GitHub Authentication</h2>
 
       <div v-if="!isAuthenticated" class="auth-form">
-        <p class="instructions">
-          To use Gitjump, you need a GitHub Personal Access Token.
-        </p>
+        <p class="instructions">To use Gitjump, you need a GitHub Personal Access Token.</p>
 
         <ol class="steps">
-          <li>Go to <a href="https://github.com/settings/tokens/new" target="_blank">GitHub Token Settings</a></li>
+          <li>
+            Go to
+            <a href="https://github.com/settings/tokens/new" target="_blank"
+              >GitHub Token Settings</a
+            >
+          </li>
           <li>Click "Generate new token (classic)"</li>
           <li>Give it a name (e.g., "Gitjump")</li>
           <li>Select scopes: <code>repo</code>, <code>read:user</code>, <code>read:org</code></li>
@@ -27,16 +30,14 @@
           @keyup.enter="saveToken"
         />
 
-        <button @click="saveToken" class="btn-primary" :disabled="!tokenInput">
-          Save Token
-        </button>
+        <button class="btn-primary" :disabled="!tokenInput" @click="saveToken">Save Token</button>
 
         <p v-if="error" class="error">{{ error }}</p>
       </div>
 
       <div v-else class="auth-status">
         <p class="success">✓ Authenticated with GitHub</p>
-        <button @click="logout" class="btn-secondary">Logout</button>
+        <button class="btn-secondary" @click="logout">Logout</button>
       </div>
     </div>
   </div>
@@ -83,7 +84,7 @@ async function logout() {
   max-width: 800px;
   margin: 40px auto;
   padding: 20px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 h1 {
@@ -149,7 +150,8 @@ h2 {
   box-shadow: 0 0 0 3px rgba(3, 102, 214, 0.1);
 }
 
-.btn-primary, .btn-secondary {
+.btn-primary,
+.btn-secondary {
   padding: 10px 20px;
   font-size: 14px;
   border: none;

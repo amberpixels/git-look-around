@@ -102,7 +102,7 @@ defineExpose({
   background: white;
   padding: 30px;
   border-radius: 8px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   max-width: 600px;
   max-height: 80vh;
   overflow-y: auto;
