@@ -22,11 +22,13 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { getUserRepos, type GitHubRepo } from '@/shared/github-api';
+import { getReposCache, saveReposCache, isCacheValid } from '@/shared/storage';
 
 const isVisible = ref(false);
 const repos = ref<GitHubRepo[]>([]);
 const loading = ref(false);
 const error = ref('');
+const isRefreshing = ref(false);
 
 async function show() {
   isVisible.value = true;
@@ -46,17 +48,47 @@ async function toggle() {
 }
 
 async function fetchRepos() {
-  loading.value = true;
   error.value = '';
-  repos.value = [];
 
+  // Try to load from cache first
+  const cachedRepos = await getReposCache();
+  const cacheIsValid = await isCacheValid();
+
+  if (cachedRepos && cacheIsValid) {
+    // Use cached data immediately
+    repos.value = cachedRepos;
+    // Optionally refresh in background without blocking
+    refreshInBackground();
+  } else {
+    // No valid cache, load from API
+    loading.value = true;
+    await loadFromAPI();
+  }
+}
+
+async function loadFromAPI() {
   try {
-    repos.value = await getUserRepos(10);
+    const freshRepos = await getUserRepos(10);
+    repos.value = freshRepos;
+    await saveReposCache(freshRepos);
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Failed to fetch repos';
     console.error('Failed to fetch repos:', e);
   } finally {
     loading.value = false;
+  }
+}
+
+async function refreshInBackground() {
+  isRefreshing.value = true;
+  try {
+    const freshRepos = await getUserRepos(10);
+    repos.value = freshRepos;
+    await saveReposCache(freshRepos);
+  } catch (e) {
+    console.error('Failed to refresh repos in background:', e);
+  } finally {
+    isRefreshing.value = false;
   }
 }
 
