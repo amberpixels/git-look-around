@@ -67,12 +67,40 @@ export interface GitHubRepo {
   owner: {
     login: string;
   };
+  // Date fields
+  created_at: string; // ISO 8601 format
+  updated_at: string; // ISO 8601 format
+  pushed_at: string | null; // ISO 8601 format, null if never pushed
+  // Activity metrics
+  stargazers_count: number;
+  forks_count: number;
+  open_issues_count: number;
+  size: number; // Repository size in KB
+  // Repository flags
+  private: boolean;
+  archived: boolean;
+  default_branch: string;
 }
 
 /**
- * Get user's repositories
+ * Get user's repositories with pagination
+ * Fetches all repositories across multiple pages
  */
-export async function getUserRepos(perPage = 10): Promise<GitHubRepo[]> {
-  const response = await githubFetch(`/user/repos?per_page=${perPage}&sort=updated`);
-  return response.json();
+export async function getUserRepos(): Promise<GitHubRepo[]> {
+  const allRepos: GitHubRepo[] = [];
+  let page = 1;
+  let hasMore = true;
+
+  while (hasMore) {
+    const response = await githubFetch(`/user/repos?per_page=100&sort=pushed&page=${page}`);
+    const repos: GitHubRepo[] = await response.json();
+    allRepos.push(...repos);
+
+    // Check Link header for rel="next" to determine if there are more pages
+    const linkHeader = response.headers.get('link');
+    hasMore = linkHeader?.includes('rel="next"') ?? false;
+    page++;
+  }
+
+  return allRepos;
 }
