@@ -10,6 +10,7 @@ export const MessageType = {
   GET_PRS_BY_REPO: 'GET_PRS_BY_REPO',
   FORCE_SYNC: 'FORCE_SYNC',
   RECORD_VISIT: 'RECORD_VISIT',
+  SET_REPO_INDEXED: 'SET_REPO_INDEXED',
 } as const;
 
 export type MessageType = (typeof MessageType)[keyof typeof MessageType];

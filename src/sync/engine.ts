@@ -9,13 +9,20 @@ import {
   getRepoPullRequests,
   getAuthenticatedUser,
 } from '@/src/api/github';
-import { saveRepos, saveIssues, savePullRequests, getMeta, setMeta } from '@/src/storage/db';
+import {
+  saveRepos,
+  saveIssues,
+  savePullRequests,
+  getMeta,
+  setMeta,
+  getRepo,
+} from '@/src/storage/db';
 import { getSyncPreferences } from '@/src/storage/chrome';
 import { isUserContributor } from '@/src/api/contributors';
 import type { IssueRecord, PullRequestRecord } from '@/src/types';
 
-// Repos with last update older than 6 months are considered stale
-const STALE_REPO_THRESHOLD_MS = 6 * 30 * 24 * 60 * 60 * 1000; // ~6 months
+// Repos with last update older than 6 months are considered non-indexed by default
+const INDEXED_ACTIVITY_THRESHOLD_MS = 6 * 30 * 24 * 60 * 60 * 1000; // ~6 months
 
 /**
  * Sync status stored in IndexedDB meta
@@ -27,11 +34,11 @@ export interface SyncStatus {
   lastError: string | null;
   accountLogin: string | null; // GitHub username (e.g. "amberpixels")
   progress: {
-    totalRepos: number; // Total non-stale repos
-    activeRepos: number; // Number of non-stale repos
-    staleRepos: number; // Number of stale repos (skipped)
-    issuesProgress: number; // How many repos have issues synced
-    prsProgress: number; // How many repos have PRs synced
+    totalRepos: number; // Total repos
+    indexedRepos: number; // Number of indexed repos (actively synced)
+    nonIndexedRepos: number; // Number of non-indexed repos (skipped)
+    issuesProgress: number; // How many indexed repos have issues synced
+    prsProgress: number; // How many indexed repos have PRs synced
     currentRepo: string | null;
   };
 }
@@ -53,8 +60,8 @@ export async function getSyncStatus(): Promise<SyncStatus> {
       accountLogin: null,
       progress: {
         totalRepos: 0,
-        activeRepos: 0,
-        staleRepos: 0,
+        indexedRepos: 0,
+        nonIndexedRepos: 0,
         issuesProgress: 0,
         prsProgress: 0,
         currentRepo: null,
@@ -119,12 +126,39 @@ export async function shouldRunSync(): Promise<boolean> {
 }
 
 /**
- * Check if repo is stale (not updated in last 6 months)
+ * Determine if repo should be indexed (actively synced with issues/PRs)
+ * Rules:
+ * - If indexed_manually is true, always indexed
+ * - If me_contributing is false, NOT indexed
+ * - If pushed_at older than 6 months, NOT indexed
+ * - Otherwise, indexed
  */
-function isRepoStale(repo: { updated_at: string }): boolean {
-  const lastUpdate = new Date(repo.updated_at).getTime();
-  const now = Date.now();
-  return now - lastUpdate > STALE_REPO_THRESHOLD_MS;
+function shouldIndexRepo(repo: {
+  pushed_at: string | null;
+  me_contributing?: boolean;
+  indexed_manually?: boolean;
+}): boolean {
+  // Manual override always wins
+  if (repo.indexed_manually) {
+    return true;
+  }
+
+  // Not a contributor = not indexed
+  if (repo.me_contributing === false) {
+    return false;
+  }
+
+  // No recent activity = not indexed
+  if (repo.pushed_at) {
+    const lastPush = new Date(repo.pushed_at).getTime();
+    const now = Date.now();
+    if (now - lastPush > INDEXED_ACTIVITY_THRESHOLD_MS) {
+      return false;
+    }
+  }
+
+  // Default: indexed
+  return true;
 }
 
 /**
@@ -157,8 +191,8 @@ export async function runSync(): Promise<void> {
       accountLogin,
       progress: {
         totalRepos: 0,
-        activeRepos: 0,
-        staleRepos: 0,
+        indexedRepos: 0,
+        nonIndexedRepos: 0,
         issuesProgress: 0,
         prsProgress: 0,
         currentRepo: null,
@@ -170,9 +204,9 @@ export async function runSync(): Promise<void> {
     const allRepos = await getAllAccessibleRepos();
     console.warn(`[Sync] Found ${allRepos.length} total repositories`);
 
-    // Check contributor status for each repo
-    console.warn('[Sync] Checking contributor status...');
-    const repoRecordsWithContributorStatus = await Promise.all(
+    // Check contributor status and determine indexed status for each repo
+    console.warn('[Sync] Checking contributor status and indexed status...');
+    const repoRecords = await Promise.all(
       allRepos.map(async (repo) => {
         const [owner, repoName] = repo.full_name.split('/');
         let meContributing = false;
@@ -183,26 +217,39 @@ export async function runSync(): Promise<void> {
           console.warn(`[Sync] Could not check contributor status for ${repo.full_name}:`, err);
         }
 
+        // Get existing repo to preserve indexed_manually flag
+        const existingRepo = await getRepo(repo.id);
+        const indexedManually = existingRepo?.indexed_manually || false;
+
+        // Determine if repo should be indexed
+        const indexed = shouldIndexRepo({
+          pushed_at: repo.pushed_at,
+          me_contributing: meContributing,
+          indexed_manually: indexedManually,
+        });
+
         return {
           ...repo,
           last_fetched_at: Date.now(),
           me_contributing: meContributing,
+          indexed_manually: indexedManually,
+          indexed,
         };
       }),
     );
 
     // Save all repos immediately (so UI can show them)
-    await saveRepos(repoRecordsWithContributorStatus);
+    await saveRepos(repoRecords);
     console.warn(
-      `[Sync] ✓ Saved ${allRepos.length} repos to DB (${repoRecordsWithContributorStatus.filter((r) => r.me_contributing).length} where you contribute)`,
+      `[Sync] ✓ Saved ${allRepos.length} repos to DB (${repoRecords.filter((r) => r.me_contributing).length} where you contribute)`,
     );
 
-    // Separate active and stale repos
-    const activeRepos = allRepos.filter((repo) => !isRepoStale(repo));
-    const staleRepos = allRepos.filter((repo) => isRepoStale(repo));
+    // Separate indexed and non-indexed repos
+    const indexedRepos = repoRecords.filter((repo) => repo.indexed);
+    const nonIndexedRepos = repoRecords.filter((repo) => !repo.indexed);
 
     console.warn(
-      `[Sync] Active repos: ${activeRepos.length}, Stale repos: ${staleRepos.length} (skipping)`,
+      `[Sync] Indexed repos: ${indexedRepos.length}, Non-indexed repos: ${nonIndexedRepos.length} (skipping sync)`,
     );
 
     // Update progress with repo counts
@@ -210,22 +257,22 @@ export async function runSync(): Promise<void> {
       accountLogin,
       progress: {
         totalRepos: allRepos.length,
-        activeRepos: activeRepos.length,
-        staleRepos: staleRepos.length,
+        indexedRepos: indexedRepos.length,
+        nonIndexedRepos: nonIndexedRepos.length,
         issuesProgress: 0,
         prsProgress: 0,
         currentRepo: null,
       },
     });
 
-    // Step 2: Fetch issues and PRs for active repos only (based on preferences)
+    // Step 2: Fetch issues and PRs for indexed repos only (based on preferences)
     const syncTargets = [];
     if (preferences.syncIssues) syncTargets.push('issues');
     if (preferences.syncPullRequests) syncTargets.push('PRs');
 
     if (syncTargets.length > 0) {
       console.warn(
-        `[Sync] Syncing ${syncTargets.join(' and ')} for ${activeRepos.length} active repos...`,
+        `[Sync] Syncing ${syncTargets.join(' and ')} for ${indexedRepos.length} indexed repos...`,
       );
     } else {
       console.warn('[Sync] Skipping issues and PRs (disabled in preferences)');
@@ -234,7 +281,7 @@ export async function runSync(): Promise<void> {
     let issuesCount = 0;
     let prsCount = 0;
 
-    for (const repo of activeRepos) {
+    for (const repo of indexedRepos) {
       try {
         const [owner, repoName] = repo.full_name.split('/');
 
@@ -242,8 +289,8 @@ export async function runSync(): Promise<void> {
         await updateSyncStatus({
           progress: {
             totalRepos: allRepos.length,
-            activeRepos: activeRepos.length,
-            staleRepos: staleRepos.length,
+            indexedRepos: indexedRepos.length,
+            nonIndexedRepos: nonIndexedRepos.length,
             issuesProgress: issuesCount,
             prsProgress: prsCount,
             currentRepo: repo.full_name,
@@ -251,7 +298,7 @@ export async function runSync(): Promise<void> {
         });
 
         console.warn(
-          `[Sync] [${Math.max(issuesCount, prsCount) + 1}/${activeRepos.length}] Processing ${repo.full_name}...`,
+          `[Sync] [${Math.max(issuesCount, prsCount) + 1}/${indexedRepos.length}] Processing ${repo.full_name}...`,
         );
 
         // Build promises array based on preferences
@@ -274,8 +321,8 @@ export async function runSync(): Promise<void> {
                   updateSyncStatus({
                     progress: {
                       totalRepos: allRepos.length,
-                      activeRepos: activeRepos.length,
-                      staleRepos: staleRepos.length,
+                      indexedRepos: indexedRepos.length,
+                      nonIndexedRepos: nonIndexedRepos.length,
                       issuesProgress: issuesCount,
                       prsProgress: prsCount,
                       currentRepo: repo.full_name,
@@ -291,7 +338,7 @@ export async function runSync(): Promise<void> {
               }),
           );
         } else {
-          // If not syncing issues, increment count to match activeRepos
+          // If not syncing issues, increment count to match indexedRepos
           issuesCount++;
         }
 
@@ -312,8 +359,8 @@ export async function runSync(): Promise<void> {
                   updateSyncStatus({
                     progress: {
                       totalRepos: allRepos.length,
-                      activeRepos: activeRepos.length,
-                      staleRepos: staleRepos.length,
+                      indexedRepos: indexedRepos.length,
+                      nonIndexedRepos: nonIndexedRepos.length,
                       issuesProgress: issuesCount,
                       prsProgress: prsCount,
                       currentRepo: repo.full_name,
@@ -329,7 +376,7 @@ export async function runSync(): Promise<void> {
               }),
           );
         } else {
-          // If not syncing PRs, increment count to match activeRepos
+          // If not syncing PRs, increment count to match indexedRepos
           prsCount++;
         }
 
@@ -339,8 +386,8 @@ export async function runSync(): Promise<void> {
         // This should rarely be reached now, but keep as safety net
         console.error(`[Sync] ✗ Unexpected error for ${repo.full_name}:`, err);
         // Ensure counters are incremented so we don't get stuck
-        if (issuesCount < activeRepos.length) issuesCount++;
-        if (prsCount < activeRepos.length) prsCount++;
+        if (issuesCount < indexedRepos.length) issuesCount++;
+        if (prsCount < indexedRepos.length) prsCount++;
       }
     }
 
@@ -352,8 +399,8 @@ export async function runSync(): Promise<void> {
       accountLogin,
       progress: {
         totalRepos: allRepos.length,
-        activeRepos: activeRepos.length,
-        staleRepos: staleRepos.length,
+        indexedRepos: indexedRepos.length,
+        nonIndexedRepos: nonIndexedRepos.length,
         issuesProgress: issuesCount,
         prsProgress: prsCount,
         currentRepo: null,
@@ -361,7 +408,7 @@ export async function runSync(): Promise<void> {
     });
 
     console.warn(
-      `[Sync] ✓ Sync completed: ${activeRepos.length} active repos, ${staleRepos.length} stale (skipped)`,
+      `[Sync] ✓ Sync completed: ${indexedRepos.length} indexed repos, ${nonIndexedRepos.length} non-indexed (skipped)`,
     );
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -404,8 +451,8 @@ export async function resetSync(): Promise<void> {
     lastError: 'Manually reset by user',
     progress: {
       totalRepos: 0,
-      activeRepos: 0,
-      staleRepos: 0,
+      indexedRepos: 0,
+      nonIndexedRepos: 0,
       issuesProgress: 0,
       prsProgress: 0,
       currentRepo: null,
