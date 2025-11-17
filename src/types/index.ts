@@ -6,6 +6,17 @@
 // ==================== GitHub API Types ====================
 
 /**
+ * GitHub Organization from API
+ */
+export interface GitHubOrg {
+  id: number;
+  login: string; // Organization name (e.g., "google")
+  avatar_url: string;
+  description: string | null;
+  url: string;
+}
+
+/**
  * GitHub Repository from API
  */
 export interface GitHubRepo {

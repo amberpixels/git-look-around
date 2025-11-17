@@ -4,7 +4,7 @@
 
 import { getGitHubToken } from '@/src/storage/chrome';
 import { getMeta, setMeta } from '@/src/storage/db';
-import type { GitHubRepo, GitHubIssue, GitHubPullRequest } from '@/src/types';
+import type { GitHubRepo, GitHubIssue, GitHubPullRequest, GitHubOrg } from '@/src/types';
 
 const GITHUB_API_BASE = 'https://api.github.com';
 const RATE_LIMIT_META_KEY = 'rate_limit_info';
@@ -186,4 +186,61 @@ export async function getRepoPullRequests(
   allPRs.push(...closedPRs);
 
   return allPRs;
+}
+
+/**
+ * Get user's organizations
+ */
+export async function getUserOrganizations(): Promise<GitHubOrg[]> {
+  const response = await githubFetch('/user/orgs?per_page=100');
+  const orgs: GitHubOrg[] = await response.json();
+  return orgs;
+}
+
+/**
+ * Get repositories for a specific organization
+ */
+export async function getOrgRepos(orgName: string): Promise<GitHubRepo[]> {
+  const allRepos: GitHubRepo[] = [];
+  let page = 1;
+  let hasMore = true;
+
+  while (hasMore) {
+    const response = await githubFetch(
+      `/orgs/${orgName}/repos?per_page=100&sort=pushed&page=${page}`,
+    );
+    const repos: GitHubRepo[] = await response.json();
+    allRepos.push(...repos);
+
+    // Check Link header for rel="next"
+    const linkHeader = response.headers.get('link');
+    hasMore = linkHeader?.includes('rel="next"') ?? false;
+    page++;
+  }
+
+  return allRepos;
+}
+
+/**
+ * Get all repositories (user repos + all organization repos)
+ */
+export async function getAllAccessibleRepos(): Promise<GitHubRepo[]> {
+  // Fetch user's personal repos
+  const userRepos = await getUserRepos();
+
+  // Fetch user's organizations
+  const orgs = await getUserOrganizations();
+
+  // Fetch repos for each organization
+  const orgReposPromises = orgs.map((org) => getOrgRepos(org.login));
+  const orgReposArrays = await Promise.all(orgReposPromises);
+
+  // Flatten all org repos
+  const allOrgRepos = orgReposArrays.flat();
+
+  // Combine and deduplicate (user might have forked an org repo)
+  const allRepos = [...userRepos, ...allOrgRepos];
+  const uniqueRepos = Array.from(new Map(allRepos.map((repo) => [repo.id, repo])).values());
+
+  return uniqueRepos;
 }

@@ -4,7 +4,7 @@
  */
 
 import {
-  getUserRepos,
+  getAllAccessibleRepos,
   getRepoIssues,
   getRepoPullRequests,
   getAuthenticatedUser,
@@ -159,9 +159,9 @@ export async function runSync(): Promise<void> {
       },
     });
 
-    // Step 1: Fetch all repos and count them
-    console.warn('[Sync] Fetching repositories...');
-    const allRepos = await getUserRepos();
+    // Step 1: Fetch all repos (user + organizations) and count them
+    console.warn('[Sync] Fetching repositories (user + organizations)...');
+    const allRepos = await getAllAccessibleRepos();
     console.warn(`[Sync] Found ${allRepos.length} total repositories`);
 
     // Save all repos immediately (so UI can show them)
