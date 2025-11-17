@@ -53,7 +53,6 @@ export async function githubFetch(path: string, options: RequestInit = {}): Prom
     };
     // Store in IndexedDB so it's accessible from all contexts (popup, content script)
     await setMeta(RATE_LIMIT_META_KEY, rateLimitInfo);
-    console.warn('[GitHub API] Rate limit updated:', rateLimitInfo);
   }
 
   if (!response.ok) {

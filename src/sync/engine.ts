@@ -68,7 +68,6 @@ async function updateSyncStatus(updates: Partial<SyncStatus>): Promise<void> {
   const current = await getSyncStatus();
   const newStatus = { ...current, ...updates };
   await setMeta(SYNC_STATUS_KEY, newStatus);
-  console.warn('[Sync] Status updated:', JSON.stringify(newStatus, null, 2));
 }
 
 /**
