@@ -12,7 +12,7 @@ import type {
 } from '@/src/types';
 
 const DB_NAME = 'gitjump';
-const DB_VERSION = 1;
+const DB_VERSION = 3; // Bumped for me_contributing field
 
 // Store names
 export const STORES = {
@@ -41,7 +41,10 @@ export function initDB(): Promise<IDBDatabase> {
         const repoStore = db.createObjectStore(STORES.REPOS, { keyPath: 'id' });
         repoStore.createIndex('full_name', 'full_name', { unique: true });
         repoStore.createIndex('pushed_at', 'pushed_at', { unique: false });
-        repoStore.createIndex('lastFetchedAt', 'lastFetchedAt', { unique: false });
+        repoStore.createIndex('last_fetched_at', 'last_fetched_at', { unique: false });
+        repoStore.createIndex('last_visited_at', 'last_visited_at', { unique: false });
+        repoStore.createIndex('visit_count', 'visit_count', { unique: false });
+        repoStore.createIndex('me_contributing', 'me_contributing', { unique: false });
       }
 
       // Create issues store
@@ -50,7 +53,8 @@ export function initDB(): Promise<IDBDatabase> {
         issueStore.createIndex('repo_id', 'repo_id', { unique: false });
         issueStore.createIndex('state', 'state', { unique: false });
         issueStore.createIndex('updated_at', 'updated_at', { unique: false });
-        issueStore.createIndex('lastFetchedAt', 'lastFetchedAt', { unique: false });
+        issueStore.createIndex('last_fetched_at', 'last_fetched_at', { unique: false });
+        issueStore.createIndex('last_visited_at', 'last_visited_at', { unique: false });
       }
 
       // Create pull_requests store
@@ -59,7 +63,8 @@ export function initDB(): Promise<IDBDatabase> {
         prStore.createIndex('repo_id', 'repo_id', { unique: false });
         prStore.createIndex('state', 'state', { unique: false });
         prStore.createIndex('updated_at', 'updated_at', { unique: false });
-        prStore.createIndex('lastFetchedAt', 'lastFetchedAt', { unique: false });
+        prStore.createIndex('last_fetched_at', 'last_fetched_at', { unique: false });
+        prStore.createIndex('last_visited_at', 'last_visited_at', { unique: false });
       }
 
       // Create visits store
@@ -254,9 +259,50 @@ export async function getVisit(
 }
 
 export async function recordVisit(type: 'repo' | 'issue' | 'pr', entityId: number): Promise<void> {
+  const now = Date.now();
+
+  // Update the entity record directly for SPEED
+  if (type === 'repo') {
+    const repo = await getRepo(entityId);
+    if (repo) {
+      const updatedRepo = {
+        ...repo,
+        visit_count: (repo.visit_count || 0) + 1,
+        last_visited_at: now,
+        first_visited_at: repo.first_visited_at || now,
+      };
+      console.warn(
+        `[recordVisit] Updating repo ${repo.full_name}: visit_count=${updatedRepo.visit_count}, last_visited_at=${new Date(now).toISOString()}`,
+      );
+      await saveRepo(updatedRepo);
+    } else {
+      console.warn(`[recordVisit] Repo with ID ${entityId} not found in database`);
+    }
+  } else if (type === 'issue') {
+    const issue = await getFromStore<IssueRecord>(STORES.ISSUES, entityId);
+    if (issue) {
+      await putInStore(STORES.ISSUES, {
+        ...issue,
+        visit_count: (issue.visit_count || 0) + 1,
+        last_visited_at: now,
+        first_visited_at: issue.first_visited_at || now,
+      });
+    }
+  } else if (type === 'pr') {
+    const pr = await getFromStore<PullRequestRecord>(STORES.PULL_REQUESTS, entityId);
+    if (pr) {
+      await putInStore(STORES.PULL_REQUESTS, {
+        ...pr,
+        visit_count: (pr.visit_count || 0) + 1,
+        last_visited_at: now,
+        first_visited_at: pr.first_visited_at || now,
+      });
+    }
+  }
+
+  // Optional: Also keep VisitRecord for analytics (can remove if not needed)
   const id = `${type}:${entityId}`;
   const existing = await getVisit(type, entityId);
-  const now = Date.now();
 
   const visit: VisitRecord = existing
     ? {

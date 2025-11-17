@@ -11,7 +11,8 @@ import {
 } from '@/src/api/github';
 import { saveRepos, saveIssues, savePullRequests, getMeta, setMeta } from '@/src/storage/db';
 import { getSyncPreferences } from '@/src/storage/chrome';
-import type { RepoRecord, IssueRecord, PullRequestRecord } from '@/src/types';
+import { isUserContributor } from '@/src/api/contributors';
+import type { IssueRecord, PullRequestRecord } from '@/src/types';
 
 // Repos with last update older than 6 months are considered stale
 const STALE_REPO_THRESHOLD_MS = 6 * 30 * 24 * 60 * 60 * 1000; // ~6 months
@@ -169,13 +170,32 @@ export async function runSync(): Promise<void> {
     const allRepos = await getAllAccessibleRepos();
     console.warn(`[Sync] Found ${allRepos.length} total repositories`);
 
+    // Check contributor status for each repo
+    console.warn('[Sync] Checking contributor status...');
+    const repoRecordsWithContributorStatus = await Promise.all(
+      allRepos.map(async (repo) => {
+        const [owner, repoName] = repo.full_name.split('/');
+        let meContributing = false;
+
+        try {
+          meContributing = await isUserContributor(owner, repoName, accountLogin);
+        } catch (err) {
+          console.warn(`[Sync] Could not check contributor status for ${repo.full_name}:`, err);
+        }
+
+        return {
+          ...repo,
+          last_fetched_at: Date.now(),
+          me_contributing: meContributing,
+        };
+      }),
+    );
+
     // Save all repos immediately (so UI can show them)
-    const repoRecords: RepoRecord[] = allRepos.map((repo) => ({
-      ...repo,
-      lastFetchedAt: Date.now(),
-    }));
-    await saveRepos(repoRecords);
-    console.warn(`[Sync] ✓ Saved ${allRepos.length} repos to DB`);
+    await saveRepos(repoRecordsWithContributorStatus);
+    console.warn(
+      `[Sync] ✓ Saved ${allRepos.length} repos to DB (${repoRecordsWithContributorStatus.filter((r) => r.me_contributing).length} where you contribute)`,
+    );
 
     // Separate active and stale repos
     const activeRepos = allRepos.filter((repo) => !isRepoStale(repo));
@@ -245,7 +265,7 @@ export async function runSync(): Promise<void> {
                 const issueRecords: IssueRecord[] = issues.map((issue) => ({
                   ...issue,
                   repo_id: repo.id,
-                  lastFetchedAt: Date.now(),
+                  last_fetched_at: Date.now(),
                 }));
                 return saveIssues(issueRecords).then(() => {
                   issuesCount++;
@@ -283,7 +303,7 @@ export async function runSync(): Promise<void> {
                 const prRecords: PullRequestRecord[] = prs.map((pr) => ({
                   ...pr,
                   repo_id: repo.id,
-                  lastFetchedAt: Date.now(),
+                  last_fetched_at: Date.now(),
                 }));
                 return savePullRequests(prRecords).then(() => {
                   prsCount++;

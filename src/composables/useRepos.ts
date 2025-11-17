@@ -30,13 +30,41 @@ export function useRepos() {
   }
 
   /**
-   * Sort repos by pushed_at (most recent first)
+   * Sort repos by priority:
+   * 1. Visited repos (sorted by last_visited_at descending)
+   * 2. Unvisited repos where me_contributing=true (sorted by pushed_at descending)
+   * 3. Unvisited repos where me_contributing=false (sorted by pushed_at descending)
    */
-  function sortReposByPushedAt(reposToSort: RepoRecord[]): RepoRecord[] {
+  function sortReposByVisitPriority(reposToSort: RepoRecord[]): RepoRecord[] {
     return [...reposToSort].sort((a, b) => {
-      const dateA = a.pushed_at ? new Date(a.pushed_at).getTime() : 0;
-      const dateB = b.pushed_at ? new Date(b.pushed_at).getTime() : 0;
-      return dateB - dateA; // Descending (newest first)
+      const visitedA = a.last_visited_at || 0;
+      const visitedB = b.last_visited_at || 0;
+      const contributingA = a.me_contributing ?? false;
+      const contributingB = b.me_contributing ?? false;
+
+      // Both visited - sort by visit time
+      if (visitedA > 0 && visitedB > 0) {
+        if (visitedA !== visitedB) {
+          return visitedB - visitedA; // Most recently visited first
+        }
+        // Same visit time, fall back to pushed_at
+        const pushedA = a.pushed_at ? new Date(a.pushed_at).getTime() : 0;
+        const pushedB = b.pushed_at ? new Date(b.pushed_at).getTime() : 0;
+        return pushedB - pushedA;
+      }
+
+      // One visited, one not - visited always first
+      if (visitedA > 0 && visitedB === 0) return -1;
+      if (visitedA === 0 && visitedB > 0) return 1;
+
+      // Both unvisited - check contributor status
+      if (contributingA && !contributingB) return -1; // Contributing repos first
+      if (!contributingA && contributingB) return 1;
+
+      // Both have same contributor status - sort by pushed_at
+      const pushedA = a.pushed_at ? new Date(a.pushed_at).getTime() : 0;
+      const pushedB = b.pushed_at ? new Date(b.pushed_at).getTime() : 0;
+      return pushedB - pushedA;
     });
   }
 
@@ -44,12 +72,12 @@ export function useRepos() {
    * Split repos into active and stale
    */
   const activeRepos = computed(() => {
-    const sorted = sortReposByPushedAt(repos.value);
+    const sorted = sortReposByVisitPriority(repos.value);
     return sorted.filter((repo) => !isRepoStale(repo));
   });
 
   const staleRepos = computed(() => {
-    const sorted = sortReposByPushedAt(repos.value);
+    const sorted = sortReposByVisitPriority(repos.value);
     return sorted.filter((repo) => isRepoStale(repo));
   });
 
