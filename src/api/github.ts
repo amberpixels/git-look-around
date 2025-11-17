@@ -2,9 +2,9 @@
  * GitHub API client with authentication
  */
 
-import { getGitHubToken } from './storage';
-import { getMeta, setMeta } from './db';
-import type { GitHubRepo, GitHubIssue, GitHubPullRequest } from './types';
+import { getGitHubToken } from '@/src/storage/chrome';
+import { getMeta, setMeta } from '@/src/storage/db';
+import type { GitHubRepo, GitHubIssue, GitHubPullRequest } from '@/src/types';
 
 const GITHUB_API_BASE = 'https://api.github.com';
 const RATE_LIMIT_META_KEY = 'rate_limit_info';

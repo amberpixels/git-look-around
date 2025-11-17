@@ -1,56 +1,45 @@
 <script lang="ts" setup>
-import { ref, onMounted, onUnmounted } from 'vue';
-import { isAuthenticated as checkAuth } from '@/shared/storage';
-import { MessageType } from '@/shared/messages';
-import type { ExtensionMessage } from '@/shared/messages';
-import type { RateLimitInfo } from '@/shared/github-api';
-import type { SyncStatus } from '@/shared/sync-engine';
+import { ref, computed, onMounted } from 'vue';
+import { isAuthenticated as checkAuth } from '@/src/storage/chrome';
+import { useSyncStatus } from '@/src/composables/useSyncStatus';
+import { useRateLimit } from '@/src/composables/useRateLimit';
 
 const isAuthenticated = ref<boolean | null>(null);
 const loading = ref(true);
-const rateLimit = ref<RateLimitInfo | null>(null);
-const syncStatusText = ref<string>('');
 
-// Helper to send messages to background
-async function sendMessage<T>(type: MessageType, payload?: unknown): Promise<T> {
-  const message: ExtensionMessage = { type, payload };
-  return new Promise((resolve, reject) => {
-    browser.runtime.sendMessage(message, (response) => {
-      if (response?.success) {
-        resolve(response.data as T);
-      } else {
-        reject(new Error(response?.error || 'Unknown error'));
-      }
-    });
-  });
-}
+// Use composables for data fetching
+const { status: syncStatus } = useSyncStatus(5000); // Poll every 5 seconds
+const { rateLimit, getRateLimitStatus } = useRateLimit(5000);
+
+// Computed sync status text
+const syncStatusText = computed(() => {
+  if (!syncStatus.value) return 'Loading...';
+
+  const status = syncStatus.value;
+
+  if (status.isRunning) {
+    const { activeRepos, issuesProgress, prsProgress } = status.progress;
+    const account = status.accountLogin ? `@${status.accountLogin}: ` : '';
+    if (activeRepos > 0) {
+      return `${account}Syncing ${Math.max(issuesProgress, prsProgress)}/${activeRepos}...`;
+    } else {
+      return `${account}Syncing...`;
+    }
+  } else if (status.lastCompletedAt) {
+    const minutes = Math.round((Date.now() - status.lastCompletedAt) / 60000);
+    const { activeRepos } = status.progress;
+    const account = status.accountLogin ? `@${status.accountLogin}` : 'Account';
+    const repoCount = activeRepos > 0 ? ` (${activeRepos} repos)` : '';
+    const timeAgo = minutes === 0 ? 'just now' : `${minutes}m ago`;
+    return `${account}${repoCount} synced ${timeAgo}`;
+  } else {
+    return 'Not synced yet';
+  }
+});
 
 onMounted(async () => {
   try {
     isAuthenticated.value = await checkAuth();
-
-    // Load initial rate limit and sync status from background
-    rateLimit.value = await sendMessage<RateLimitInfo | null>(MessageType.GET_RATE_LIMIT);
-    console.warn('[Popup] Rate limit from background:', rateLimit.value);
-
-    const status = await sendMessage<SyncStatus>(MessageType.GET_SYNC_STATUS);
-    console.warn('[Popup] Sync status from background:', status);
-    updateSyncStatusText(status);
-
-    // Poll for updates every 5 seconds while popup is open
-    const interval = window.setInterval(async () => {
-      try {
-        const updatedStatus = await sendMessage<SyncStatus>(MessageType.GET_SYNC_STATUS);
-        console.warn('[Popup] Sync status updated:', updatedStatus);
-        updateSyncStatusText(updatedStatus);
-        rateLimit.value = await sendMessage<RateLimitInfo | null>(MessageType.GET_RATE_LIMIT);
-      } catch (err) {
-        console.error('[Popup] Error polling status:', err);
-      }
-    }, 5000);
-
-    // Cleanup on unmount
-    onUnmounted(() => window.clearInterval(interval));
   } catch (err) {
     console.error('[Popup] Error during mount:', err);
     isAuthenticated.value = false;
@@ -59,37 +48,8 @@ onMounted(async () => {
   }
 });
 
-function updateSyncStatusText(status: SyncStatus) {
-  if (status.isRunning) {
-    const { activeRepos, issuesProgress, prsProgress } = status.progress;
-    const account = status.accountLogin ? `@${status.accountLogin}: ` : '';
-    if (activeRepos > 0) {
-      syncStatusText.value = `${account}Syncing ${Math.max(issuesProgress, prsProgress)}/${activeRepos}...`;
-    } else {
-      syncStatusText.value = `${account}Syncing...`;
-    }
-  } else if (status.lastCompletedAt) {
-    const minutes = Math.round((Date.now() - status.lastCompletedAt) / 60000);
-    const { activeRepos } = status.progress;
-    const account = status.accountLogin ? `@${status.accountLogin}` : 'Account';
-    const repoCount = activeRepos > 0 ? ` (${activeRepos} repos)` : '';
-    const timeAgo = minutes === 0 ? 'just now' : `${minutes}m ago`;
-    syncStatusText.value = `${account}${repoCount} synced ${timeAgo}`;
-  } else {
-    syncStatusText.value = 'Not synced yet';
-  }
-}
-
 function openOptions() {
   browser.runtime.openOptionsPage();
-}
-
-function getRateLimitStatus(): 'good' | 'warning' | 'critical' {
-  if (!rateLimit.value) return 'good';
-  const remaining = rateLimit.value.remaining;
-  if (remaining < 100) return 'critical';
-  if (remaining < 500) return 'warning';
-  return 'good';
 }
 
 function getRateLimitResetTime(): string {

@@ -5,7 +5,7 @@
         <h2>Your Repositories</h2>
         <div class="header-right">
           <div class="sync-status">
-            <span :class="{ syncing: isSyncing }">{{ syncStatus }}</span>
+            <span :class="{ syncing: isSyncing }">{{ syncStatusText }}</span>
             <button v-if="!isSyncing" class="sync-button" @click="triggerSync">↻ Sync</button>
           </div>
           <div v-if="rateLimit" class="rate-limit-compact">
@@ -19,7 +19,7 @@
         </div>
       </div>
 
-      <div v-if="error" class="status error">{{ error }}</div>
+      <div v-if="reposError" class="status error">{{ reposError }}</div>
       <div v-else-if="repos.length === 0" class="status">
         No repos in database yet. Click "Sync" to sync from GitHub.
       </div>
@@ -118,207 +118,73 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
-import { MessageType } from '@/shared/messages';
-import type { ExtensionMessage } from '@/shared/messages';
-import type { RepoRecord } from '@/shared/types';
-import type { RateLimitInfo } from '@/shared/github-api';
-import type { SyncStatus } from '@/shared/sync-engine';
+import { ref, computed, onMounted } from 'vue';
+import { useRepos } from '@/src/composables/useRepos';
+import { useSyncStatus } from '@/src/composables/useSyncStatus';
+import { useRateLimit } from '@/src/composables/useRateLimit';
 
 const isVisible = ref(false);
-const repos = ref<RepoRecord[]>([]);
-const error = ref('');
 
-// Track counts for each repo
-const repoCounts = ref<Record<number, { issues: number; prs: number }>>({});
+// Use composables
+const {
+  repos,
+  activeRepos,
+  staleRepos,
+  repoCounts,
+  error: reposError,
+  loadAll: loadReposData,
+} = useRepos();
 
-// Sync status
-const syncStatus = ref<string>('');
-const isSyncing = ref(false);
+const { status: syncStatus, forceSync } = useSyncStatus(0); // No auto-polling in overlay
+const { rateLimit, getRateLimitStatus } = useRateLimit(0);
 
-// Rate limit
-const rateLimit = ref<RateLimitInfo | null>(null);
+// Computed sync status text
+const syncStatusText = computed(() => {
+  if (!syncStatus.value) return 'Loading...';
 
-// Stale repo threshold (same as sync-engine)
-const STALE_REPO_THRESHOLD_MS = 6 * 30 * 24 * 60 * 60 * 1000; // ~6 months
-
-// Split repos into active and stale
-const activeRepos = ref<RepoRecord[]>([]);
-const staleRepos = ref<RepoRecord[]>([]);
-
-/**
- * Check if repo is stale (not updated in last 6 months)
- */
-function isRepoStale(repo: RepoRecord): boolean {
-  if (!repo.updated_at) return false;
-  const lastUpdate = new Date(repo.updated_at).getTime();
-  const now = Date.now();
-  return now - lastUpdate > STALE_REPO_THRESHOLD_MS;
-}
-
-/**
- * Sort repos by pushed_at (most recent first)
- */
-function sortReposByPushedAt(repos: RepoRecord[]): RepoRecord[] {
-  return [...repos].sort((a, b) => {
-    const dateA = a.pushed_at ? new Date(a.pushed_at).getTime() : 0;
-    const dateB = b.pushed_at ? new Date(b.pushed_at).getTime() : 0;
-    return dateB - dateA; // Descending (newest first)
-  });
-}
-
-// Helper to send messages to background
-async function sendMessage<T>(type: MessageType, payload?: unknown): Promise<T> {
-  const message: ExtensionMessage = { type, payload };
-  return new Promise((resolve, reject) => {
-    browser.runtime.sendMessage(message, (response) => {
-      if (response?.success) {
-        resolve(response.data as T);
-      } else {
-        reject(new Error(response?.error || 'Unknown error'));
-      }
-    });
-  });
-}
-
-/**
- * Load data from background worker
- */
-async function loadFromDB() {
-  try {
-    error.value = '';
-
-    // Load repos from background
-    const dbRepos = await sendMessage<RepoRecord[]>(MessageType.GET_ALL_REPOS);
-    repos.value = dbRepos;
-
-    // Sort all repos by pushed_at
-    const sortedRepos = sortReposByPushedAt(dbRepos);
-
-    // Split into active and stale
-    const active: RepoRecord[] = [];
-    const stale: RepoRecord[] = [];
-
-    for (const repo of sortedRepos) {
-      if (isRepoStale(repo)) {
-        stale.push(repo);
-      } else {
-        active.push(repo);
-      }
-    }
-
-    activeRepos.value = active;
-    staleRepos.value = stale;
-
-    // Load counts for all repos
-    await loadCounts();
-
-    // Update sync status display
-    await updateSyncStatusDisplay();
-
-    // Update rate limit info
-    await updateRateLimitDisplay();
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : 'Failed to load data from DB';
-    console.error('Failed to load from DB:', e);
-  }
-}
-
-/**
- * Update rate limit display
- */
-async function updateRateLimitDisplay() {
-  const limit = await sendMessage<RateLimitInfo | null>(MessageType.GET_RATE_LIMIT);
-  if (limit) {
-    rateLimit.value = limit;
-  }
-}
-
-/**
- * Get rate limit status for dot indicator
- */
-function getRateLimitStatus(): 'good' | 'warning' | 'limited' {
-  if (!rateLimit.value) return 'good';
-  const remaining = rateLimit.value.remaining;
-  if (remaining < 100) return 'limited';
-  if (remaining < 500) return 'warning';
-  return 'good';
-}
-
-/**
- * Load issue and PR counts for each repo from background
- */
-async function loadCounts() {
-  const counts: Record<number, { issues: number; prs: number }> = {};
-
-  // Load counts in parallel for better performance
-  await Promise.all(
-    repos.value.map(async (repo) => {
-      const [issues, prs] = await Promise.all([
-        sendMessage(MessageType.GET_ISSUES_BY_REPO, repo.id),
-        sendMessage(MessageType.GET_PRS_BY_REPO, repo.id),
-      ]);
-      counts[repo.id] = {
-        issues: issues.length,
-        prs: prs.length,
-      };
-    }),
-  );
-
-  repoCounts.value = counts;
-}
-
-/**
- * Update sync status display
- */
-async function updateSyncStatusDisplay() {
-  const status = await sendMessage<SyncStatus>(MessageType.GET_SYNC_STATUS);
-  isSyncing.value = status.isRunning;
-
+  const status = syncStatus.value;
   const account = status.accountLogin ? `@${status.accountLogin}` : 'Account';
 
   if (status.isRunning) {
     const { activeRepos, issuesProgress, prsProgress } = status.progress;
 
     if (activeRepos === 0) {
-      // Still fetching repos
-      syncStatus.value = `${account}: Fetching repositories...`;
+      return `${account}: Fetching repositories...`;
     } else if (issuesProgress === 0 && prsProgress === 0) {
-      // Repos fetched, starting to sync issues/PRs
-      syncStatus.value = `${account}: ${activeRepos} repos, starting sync...`;
+      return `${account}: ${activeRepos} repos, starting sync...`;
     } else {
-      // Syncing issues and PRs
-      syncStatus.value = `${account}: ${activeRepos} repos, syncing issues ${issuesProgress}/${activeRepos}, PRs ${prsProgress}/${activeRepos}`;
+      return `${account}: ${activeRepos} repos, syncing issues ${issuesProgress}/${activeRepos}, PRs ${prsProgress}/${activeRepos}`;
     }
   } else if (status.lastCompletedAt) {
     const timeAgo = Math.round((Date.now() - status.lastCompletedAt) / 1000 / 60);
     const { activeRepos } = status.progress;
     const repoText = activeRepos > 0 ? `${activeRepos} repos` : 'repos';
     const timeText = timeAgo === 0 ? 'just now' : `${timeAgo}m ago`;
-    syncStatus.value = `${account}: ${repoText}, synced ${timeText}`;
+    return `${account}: ${repoText}, synced ${timeText}`;
   } else {
-    syncStatus.value = 'Not synced yet';
+    return 'Not synced yet';
   }
-}
+});
+
+const isSyncing = computed(() => syncStatus.value?.isRunning ?? false);
 
 /**
  * Manually trigger a sync
  */
 async function triggerSync() {
   try {
-    await sendMessage(MessageType.FORCE_SYNC);
+    await forceSync();
     // Reload data after sync completes
-    await loadFromDB();
+    await loadReposData();
   } catch (e) {
-    error.value = e instanceof Error ? e.message : 'Sync failed';
     console.error('Manual sync failed:', e);
   }
 }
 
 async function show() {
   isVisible.value = true;
-  // Always load from DB immediately (fast, no API calls)
-  await loadFromDB();
+  // Load data immediately
+  await loadReposData();
 }
 
 function hide() {
@@ -333,10 +199,10 @@ async function toggle() {
   }
 }
 
-// Auto-reload data when component mounts (content script loads)
+// Auto-load data when component mounts (content script loads)
 onMounted(async () => {
   // Silently load data in background so it's ready when user opens overlay
-  await loadFromDB();
+  await loadReposData();
 });
 
 function handleBackdropClick(e: MouseEvent) {

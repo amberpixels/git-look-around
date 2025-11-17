@@ -1,7 +1,7 @@
 import { createApp } from 'vue';
 import App from './App.vue';
-import { MessageType } from '@/shared/messages';
-import type { ExtensionMessage } from '@/shared/messages';
+import { MessageType } from '@/src/messages/types';
+import type { ExtensionMessage } from '@/src/messages/types';
 
 export default defineContentScript({
   matches: ['*://github.com/*', '*://*.github.com/*'],

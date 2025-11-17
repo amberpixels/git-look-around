@@ -3,7 +3,13 @@
  * Stores repos, issues, pull requests, and visit tracking
  */
 
-import type { RepoRecord, IssueRecord, PullRequestRecord, VisitRecord, MetaRecord } from './types';
+import type {
+  RepoRecord,
+  IssueRecord,
+  PullRequestRecord,
+  VisitRecord,
+  MetaRecord,
+} from '@/src/types';
 
 const DB_NAME = 'gitjump';
 const DB_VERSION = 1;
