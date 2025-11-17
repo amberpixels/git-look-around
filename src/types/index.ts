@@ -179,7 +179,13 @@ export interface RepoRecord {
   fork: boolean;
   default_branch: string;
   // Internal tracking
-  lastFetchedAt: number; // Timestamp when we last synced this repo
+  last_fetched_at: number; // Timestamp when we last synced this repo
+  // Visit tracking (for ranking/sorting)
+  visit_count?: number; // Total number of visits
+  last_visited_at?: number; // Timestamp of most recent visit
+  first_visited_at?: number; // Timestamp of first visit
+  // Contributor status
+  me_contributing?: boolean; // Whether the authenticated user is a contributor
 }
 
 /**
@@ -222,7 +228,11 @@ export interface IssueRecord {
   author_association: string;
   state_reason: string | null;
   // Internal tracking
-  lastFetchedAt: number;
+  last_fetched_at: number;
+  // Visit tracking (for ranking/sorting)
+  visit_count?: number;
+  last_visited_at?: number;
+  first_visited_at?: number;
 }
 
 /**
@@ -292,7 +302,11 @@ export interface PullRequestRecord {
   closed_at: string | null;
   author_association: string;
   // Internal tracking
-  lastFetchedAt: number;
+  last_fetched_at: number;
+  // Visit tracking (for ranking/sorting)
+  visit_count?: number;
+  last_visited_at?: number;
+  first_visited_at?: number;
 }
 
 /**

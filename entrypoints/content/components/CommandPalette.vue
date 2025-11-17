@@ -162,7 +162,7 @@ const {
   loadAll: loadReposData,
 } = useRepos();
 
-const { status: syncStatus } = useSyncStatus(0); // No auto-polling in overlay
+const { status: syncStatus } = useSyncStatus(500); // Poll every 500ms for real-time updates
 const { rateLimit } = useRateLimit(0);
 const { preferences } = useSyncPreferences();
 
