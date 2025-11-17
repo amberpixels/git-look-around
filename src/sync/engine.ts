@@ -8,9 +8,9 @@ import {
   getRepoIssues,
   getRepoPullRequests,
   getAuthenticatedUser,
-} from './github-api';
-import { saveRepos, saveIssues, savePullRequests, getMeta, setMeta } from './db';
-import type { RepoRecord, IssueRecord, PullRequestRecord } from './types';
+} from '@/src/api/github';
+import { saveRepos, saveIssues, savePullRequests, getMeta, setMeta } from '@/src/storage/db';
+import type { RepoRecord, IssueRecord, PullRequestRecord } from '@/src/types';
 
 // Repos with last update older than 6 months are considered stale
 const STALE_REPO_THRESHOLD_MS = 6 * 30 * 24 * 60 * 60 * 1000; // ~6 months

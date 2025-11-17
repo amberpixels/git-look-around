@@ -45,7 +45,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { saveGitHubToken, getGitHubToken, removeGitHubToken } from '@/shared/storage';
+import { saveGitHubToken, getGitHubToken, removeGitHubToken } from '@/src/storage/chrome';
 
 const tokenInput = ref('');
 const isAuthenticated = ref(false);

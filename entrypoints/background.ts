@@ -1,8 +1,8 @@
-import { MessageType } from '@/shared/messages';
-import type { ExtensionMessage } from '@/shared/messages';
-import { runSync, getSyncStatus, forceSync } from '@/shared/sync-engine';
-import { getLastRateLimit } from '@/shared/github-api';
-import { getAllRepos, getIssuesByRepo, getPullRequestsByRepo } from '@/shared/db';
+import { MessageType } from '@/src/messages/types';
+import type { ExtensionMessage } from '@/src/messages/types';
+import { runSync, getSyncStatus, forceSync } from '@/src/sync/engine';
+import { getLastRateLimit } from '@/src/api/github';
+import { getAllRepos, getIssuesByRepo, getPullRequestsByRepo } from '@/src/storage/db';
 
 export default defineBackground(() => {
   console.warn('[Background] Gitjump background initialized', { id: browser.runtime.id });
