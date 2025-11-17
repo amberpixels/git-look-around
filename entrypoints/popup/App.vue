@@ -1,13 +1,32 @@
 <script lang="ts" setup>
-import { ref, onMounted } from 'vue';
-import { validateToken } from '@/shared/github-api';
+import { ref, onMounted, onUnmounted } from 'vue';
+import { validateToken, getLastRateLimit } from '@/shared/github-api';
+import { getSyncStatus } from '@/shared/sync-engine';
+import type { RateLimitInfo } from '@/shared/github-api';
 
 const isAuthenticated = ref<boolean | null>(null);
 const loading = ref(true);
+const rateLimit = ref<RateLimitInfo | null>(null);
+const syncStatusText = ref<string>('');
 
 onMounted(async () => {
   try {
     isAuthenticated.value = await validateToken();
+
+    // Load initial rate limit and sync status
+    rateLimit.value = await getLastRateLimit();
+    const status = await getSyncStatus();
+    updateSyncStatusText(status);
+
+    // Poll for updates every 5 seconds while popup is open
+    const interval = setInterval(async () => {
+      const updatedStatus = await getSyncStatus();
+      updateSyncStatusText(updatedStatus);
+      rateLimit.value = await getLastRateLimit();
+    }, 5000);
+
+    // Cleanup on unmount
+    onUnmounted(() => clearInterval(interval));
   } catch {
     isAuthenticated.value = false;
   } finally {
@@ -15,8 +34,38 @@ onMounted(async () => {
   }
 });
 
+function updateSyncStatusText(status: any) {
+  if (status.isRunning) {
+    const { activeRepos, issuesProgress, prsProgress } = status.progress;
+    if (activeRepos > 0) {
+      syncStatusText.value = `Syncing ${Math.max(issuesProgress, prsProgress)}/${activeRepos}...`;
+    } else {
+      syncStatusText.value = 'Syncing...';
+    }
+  } else if (status.lastCompletedAt) {
+    const minutes = Math.round((Date.now() - status.lastCompletedAt) / 60000);
+    syncStatusText.value = minutes === 0 ? 'Just synced' : `Last synced ${minutes}m ago`;
+  } else {
+    syncStatusText.value = 'Not synced yet';
+  }
+}
+
 function openOptions() {
   browser.runtime.openOptionsPage();
+}
+
+function getRateLimitStatus(): 'good' | 'warning' | 'critical' {
+  if (!rateLimit.value) return 'good';
+  const remaining = rateLimit.value.remaining;
+  if (remaining < 100) return 'critical';
+  if (remaining < 500) return 'warning';
+  return 'good';
+}
+
+function getRateLimitResetTime(): string {
+  if (!rateLimit.value) return '';
+  const resetDate = new Date(rateLimit.value.reset * 1000);
+  return resetDate.toLocaleTimeString();
 }
 </script>
 
@@ -31,6 +80,34 @@ function openOptions() {
 
     <div v-else-if="isAuthenticated" class="authenticated">
       <div class="status-badge success">✓ Authenticated</div>
+
+      <!-- Sync Status -->
+      <div class="info-section">
+        <div class="info-label">Sync Status</div>
+        <div class="info-value">{{ syncStatusText }}</div>
+      </div>
+
+      <!-- Rate Limit -->
+      <div v-if="rateLimit" class="info-section">
+        <div class="info-label">API Rate Limit</div>
+        <div class="rate-limit-bar">
+          <div
+            class="rate-limit-fill"
+            :class="getRateLimitStatus()"
+            :style="{ width: `${(rateLimit.remaining / rateLimit.limit) * 100}%` }"
+          ></div>
+        </div>
+        <div class="rate-limit-text">
+          <span :class="`status-${getRateLimitStatus()}`">
+            {{ rateLimit.remaining }} / {{ rateLimit.limit }}
+          </span>
+          <span class="reset-time">Resets at {{ getRateLimitResetTime() }}</span>
+        </div>
+        <div class="rate-limit-stats">
+          <span>Used: {{ rateLimit.used }}</span>
+        </div>
+      </div>
+
       <div class="instructions">
         <p>Press <kbd>⌘</kbd> <kbd>Shift</kbd> <kbd>K</kbd> on any GitHub page</p>
         <p class="hint">to open the command palette</p>
@@ -174,5 +251,83 @@ function openOptions() {
 
 .link:hover {
   text-decoration: underline;
+}
+
+.info-section {
+  margin: 16px 0;
+  text-align: left;
+}
+
+.info-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #6a737d;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.info-value {
+  font-size: 13px;
+  color: #24292e;
+}
+
+.rate-limit-bar {
+  height: 8px;
+  background: #e1e4e8;
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 8px 0;
+}
+
+.rate-limit-fill {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.rate-limit-fill.good {
+  background: linear-gradient(90deg, #28a745, #34d058);
+}
+
+.rate-limit-fill.warning {
+  background: linear-gradient(90deg, #dbab09, #f9c513);
+}
+
+.rate-limit-fill.critical {
+  background: linear-gradient(90deg, #d73a49, #f97583);
+}
+
+.rate-limit-text {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.status-good {
+  color: #22863a;
+  font-weight: 600;
+}
+
+.status-warning {
+  color: #b08800;
+  font-weight: 600;
+}
+
+.status-critical {
+  color: #d73a49;
+  font-weight: 600;
+}
+
+.reset-time {
+  font-size: 11px;
+  color: #6a737d;
+}
+
+.rate-limit-stats {
+  font-size: 11px;
+  color: #6a737d;
+  margin-top: 4px;
 }
 </style>

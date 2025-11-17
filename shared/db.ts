@@ -1,0 +1,282 @@
+/**
+ * IndexedDB storage layer for Gitjump
+ * Stores repos, issues, pull requests, and visit tracking
+ */
+
+import type { RepoRecord, IssueRecord, PullRequestRecord, VisitRecord, MetaRecord } from './types';
+
+const DB_NAME = 'gitjump';
+const DB_VERSION = 1;
+
+// Store names
+export const STORES = {
+  REPOS: 'repos',
+  ISSUES: 'issues',
+  PULL_REQUESTS: 'pull_requests',
+  VISITS: 'visits',
+  META: 'meta',
+} as const;
+
+/**
+ * Initialize IndexedDB database
+ */
+export function initDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+
+    request.onupgradeneeded = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result;
+
+      // Create repos store
+      if (!db.objectStoreNames.contains(STORES.REPOS)) {
+        const repoStore = db.createObjectStore(STORES.REPOS, { keyPath: 'id' });
+        repoStore.createIndex('full_name', 'full_name', { unique: true });
+        repoStore.createIndex('pushed_at', 'pushed_at', { unique: false });
+        repoStore.createIndex('lastFetchedAt', 'lastFetchedAt', { unique: false });
+      }
+
+      // Create issues store
+      if (!db.objectStoreNames.contains(STORES.ISSUES)) {
+        const issueStore = db.createObjectStore(STORES.ISSUES, { keyPath: 'id' });
+        issueStore.createIndex('repo_id', 'repo_id', { unique: false });
+        issueStore.createIndex('state', 'state', { unique: false });
+        issueStore.createIndex('updated_at', 'updated_at', { unique: false });
+        issueStore.createIndex('lastFetchedAt', 'lastFetchedAt', { unique: false });
+      }
+
+      // Create pull_requests store
+      if (!db.objectStoreNames.contains(STORES.PULL_REQUESTS)) {
+        const prStore = db.createObjectStore(STORES.PULL_REQUESTS, { keyPath: 'id' });
+        prStore.createIndex('repo_id', 'repo_id', { unique: false });
+        prStore.createIndex('state', 'state', { unique: false });
+        prStore.createIndex('updated_at', 'updated_at', { unique: false });
+        prStore.createIndex('lastFetchedAt', 'lastFetchedAt', { unique: false });
+      }
+
+      // Create visits store
+      if (!db.objectStoreNames.contains(STORES.VISITS)) {
+        const visitStore = db.createObjectStore(STORES.VISITS, { keyPath: 'id' });
+        visitStore.createIndex('type', 'type', { unique: false });
+        visitStore.createIndex('lastVisitedAt', 'lastVisitedAt', { unique: false });
+        visitStore.createIndex('visitCount', 'visitCount', { unique: false });
+      }
+
+      // Create meta store
+      if (!db.objectStoreNames.contains(STORES.META)) {
+        db.createObjectStore(STORES.META, { keyPath: 'key' });
+      }
+    };
+  });
+}
+
+/**
+ * Generic helper to get all records from a store
+ */
+export async function getAllFromStore<T>(storeName: string): Promise<T[]> {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(storeName, 'readonly');
+    const store = transaction.objectStore(storeName);
+    const request = store.getAll();
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+/**
+ * Generic helper to get a single record by key
+ */
+export async function getFromStore<T>(storeName: string, key: IDBValidKey): Promise<T | undefined> {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(storeName, 'readonly');
+    const store = transaction.objectStore(storeName);
+    const request = store.get(key);
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+/**
+ * Generic helper to put a record into a store
+ */
+export async function putInStore<T>(storeName: string, record: T): Promise<void> {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(storeName, 'readwrite');
+    const store = transaction.objectStore(storeName);
+    const request = store.put(record);
+
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
+/**
+ * Generic helper to put multiple records into a store
+ */
+export async function putManyInStore<T>(storeName: string, records: T[]): Promise<void> {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(storeName, 'readwrite');
+    const store = transaction.objectStore(storeName);
+
+    for (const record of records) {
+      store.put(record);
+    }
+
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+  });
+}
+
+/**
+ * Generic helper to delete a record from a store
+ */
+export async function deleteFromStore(storeName: string, key: IDBValidKey): Promise<void> {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(storeName, 'readwrite');
+    const store = transaction.objectStore(storeName);
+    const request = store.delete(key);
+
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
+/**
+ * Generic helper to clear all records from a store
+ */
+export async function clearStore(storeName: string): Promise<void> {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(storeName, 'readwrite');
+    const store = transaction.objectStore(storeName);
+    const request = store.clear();
+
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
+// ==================== Repo-specific helpers ====================
+
+export async function getAllRepos(): Promise<RepoRecord[]> {
+  return getAllFromStore<RepoRecord>(STORES.REPOS);
+}
+
+export async function getRepo(id: number): Promise<RepoRecord | undefined> {
+  return getFromStore<RepoRecord>(STORES.REPOS, id);
+}
+
+export async function saveRepo(repo: RepoRecord): Promise<void> {
+  return putInStore(STORES.REPOS, repo);
+}
+
+export async function saveRepos(repos: RepoRecord[]): Promise<void> {
+  return putManyInStore(STORES.REPOS, repos);
+}
+
+// ==================== Issue-specific helpers ====================
+
+export async function getAllIssues(): Promise<IssueRecord[]> {
+  return getAllFromStore<IssueRecord>(STORES.ISSUES);
+}
+
+export async function getIssuesByRepo(repoId: number): Promise<IssueRecord[]> {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORES.ISSUES, 'readonly');
+    const store = transaction.objectStore(STORES.ISSUES);
+    const index = store.index('repo_id');
+    const request = index.getAll(repoId);
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function saveIssue(issue: IssueRecord): Promise<void> {
+  return putInStore(STORES.ISSUES, issue);
+}
+
+export async function saveIssues(issues: IssueRecord[]): Promise<void> {
+  return putManyInStore(STORES.ISSUES, issues);
+}
+
+// ==================== PR-specific helpers ====================
+
+export async function getAllPullRequests(): Promise<PullRequestRecord[]> {
+  return getAllFromStore<PullRequestRecord>(STORES.PULL_REQUESTS);
+}
+
+export async function getPullRequestsByRepo(repoId: number): Promise<PullRequestRecord[]> {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORES.PULL_REQUESTS, 'readonly');
+    const store = transaction.objectStore(STORES.PULL_REQUESTS);
+    const index = store.index('repo_id');
+    const request = index.getAll(repoId);
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function savePullRequest(pr: PullRequestRecord): Promise<void> {
+  return putInStore(STORES.PULL_REQUESTS, pr);
+}
+
+export async function savePullRequests(prs: PullRequestRecord[]): Promise<void> {
+  return putManyInStore(STORES.PULL_REQUESTS, prs);
+}
+
+// ==================== Visit tracking helpers ====================
+
+export async function getVisit(
+  type: 'repo' | 'issue' | 'pr',
+  entityId: number,
+): Promise<VisitRecord | undefined> {
+  const id = `${type}:${entityId}`;
+  return getFromStore<VisitRecord>(STORES.VISITS, id);
+}
+
+export async function recordVisit(type: 'repo' | 'issue' | 'pr', entityId: number): Promise<void> {
+  const id = `${type}:${entityId}`;
+  const existing = await getVisit(type, entityId);
+  const now = Date.now();
+
+  const visit: VisitRecord = existing
+    ? {
+        ...existing,
+        visitCount: existing.visitCount + 1,
+        lastVisitedAt: now,
+      }
+    : {
+        id,
+        type,
+        entity_id: entityId,
+        visitCount: 1,
+        lastVisitedAt: now,
+        firstVisitedAt: now,
+      };
+
+  return putInStore(STORES.VISITS, visit);
+}
+
+// ==================== Meta helpers ====================
+
+export async function getMeta(key: string): Promise<any> {
+  const record = await getFromStore<MetaRecord>(STORES.META, key);
+  return record?.value;
+}
+
+export async function setMeta(key: string, value: any): Promise<void> {
+  return putInStore(STORES.META, { key, value });
+}
