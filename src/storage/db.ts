@@ -12,7 +12,7 @@ import type {
 } from '@/src/types';
 
 const DB_NAME = 'gitjump';
-const DB_VERSION = 3; // Bumped for me_contributing field
+const DB_VERSION = 4; // Bumped for indexed field
 
 // Store names
 export const STORES = {
@@ -45,6 +45,22 @@ export function initDB(): Promise<IDBDatabase> {
         repoStore.createIndex('last_visited_at', 'last_visited_at', { unique: false });
         repoStore.createIndex('visit_count', 'visit_count', { unique: false });
         repoStore.createIndex('me_contributing', 'me_contributing', { unique: false });
+        repoStore.createIndex('indexed', 'indexed', { unique: false });
+        repoStore.createIndex('indexed_manually', 'indexed_manually', { unique: false });
+      } else {
+        // Handle schema upgrades for existing databases
+        const transaction = (event.target as IDBOpenDBRequest).transaction!;
+        const repoStore = transaction.objectStore(STORES.REPOS);
+
+        // Add indexed field index if it doesn't exist
+        if (!repoStore.indexNames.contains('indexed')) {
+          repoStore.createIndex('indexed', 'indexed', { unique: false });
+        }
+
+        // Add indexed_manually field index if it doesn't exist
+        if (!repoStore.indexNames.contains('indexed_manually')) {
+          repoStore.createIndex('indexed_manually', 'indexed_manually', { unique: false });
+        }
       }
 
       // Create issues store
@@ -192,6 +208,24 @@ export async function saveRepo(repo: RepoRecord): Promise<void> {
 
 export async function saveRepos(repos: RepoRecord[]): Promise<void> {
   return putManyInStore(STORES.REPOS, repos);
+}
+
+/**
+ * Set repo as manually indexed (user clicked + button)
+ */
+export async function setRepoIndexed(repoId: number, indexed: boolean): Promise<void> {
+  const repo = await getRepo(repoId);
+  if (!repo) {
+    throw new Error(`Repo ${repoId} not found`);
+  }
+
+  const updatedRepo: RepoRecord = {
+    ...repo,
+    indexed_manually: indexed,
+    indexed,
+  };
+
+  return saveRepo(updatedRepo);
 }
 
 // ==================== Issue-specific helpers ====================

@@ -6,8 +6,7 @@ import { useBackgroundMessage } from './useBackgroundMessage';
 import { MessageType } from '@/src/messages/types';
 import type { RepoRecord } from '@/src/types';
 
-// Stale repo threshold (same as sync engine)
-const STALE_REPO_THRESHOLD_MS = 6 * 30 * 24 * 60 * 60 * 1000; // ~6 months
+// No longer needed - indexed status is now stored in the repo record itself
 
 export function useRepos() {
   const { sendMessage } = useBackgroundMessage();
@@ -18,16 +17,6 @@ export function useRepos() {
 
   // Track issue/PR counts for each repo
   const repoCounts = ref<Record<number, { issues: number; prs: number }>>({});
-
-  /**
-   * Check if repo is stale (not updated in last 6 months)
-   */
-  function isRepoStale(repo: RepoRecord): boolean {
-    if (!repo.updated_at) return false;
-    const lastUpdate = new Date(repo.updated_at).getTime();
-    const now = Date.now();
-    return now - lastUpdate > STALE_REPO_THRESHOLD_MS;
-  }
 
   /**
    * Sort repos by priority:
@@ -69,16 +58,16 @@ export function useRepos() {
   }
 
   /**
-   * Split repos into active and stale
+   * Split repos into indexed and non-indexed
    */
-  const activeRepos = computed(() => {
+  const indexedRepos = computed(() => {
     const sorted = sortReposByVisitPriority(repos.value);
-    return sorted.filter((repo) => !isRepoStale(repo));
+    return sorted.filter((repo) => repo.indexed !== false); // true or undefined = indexed
   });
 
-  const staleRepos = computed(() => {
+  const nonIndexedRepos = computed(() => {
     const sorted = sortReposByVisitPriority(repos.value);
-    return sorted.filter((repo) => isRepoStale(repo));
+    return sorted.filter((repo) => repo.indexed === false); // explicitly false = not indexed
   });
 
   /**
@@ -131,15 +120,30 @@ export function useRepos() {
     await fetchCounts();
   }
 
+  /**
+   * Add repo to index (user clicked + button)
+   */
+  async function addRepoToIndex(repoId: number) {
+    try {
+      await sendMessage(MessageType.SET_REPO_INDEXED, { repoId, indexed: true });
+      // Reload repos to reflect changes
+      await fetchRepos();
+    } catch (err) {
+      console.error(`[useRepos] Error adding repo ${repoId} to index:`, err);
+      throw err;
+    }
+  }
+
   return {
     repos,
-    activeRepos,
-    staleRepos,
+    indexedRepos,
+    nonIndexedRepos,
     repoCounts,
     loading,
     error,
     fetchRepos,
     fetchCounts,
     loadAll,
+    addRepoToIndex,
   };
 }

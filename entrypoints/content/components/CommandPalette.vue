@@ -20,9 +20,9 @@
       </div>
 
       <div v-else class="repos-container">
-        <!-- Active repos (non-stale) -->
-        <ul v-if="filteredActiveRepos.length > 0" class="repos-list">
-          <li v-for="repo in filteredActiveRepos" :key="repo.id" class="repo-item">
+        <!-- Indexed repos (actively synced) -->
+        <ul v-if="filteredIndexedRepos.length > 0" class="repos-list">
+          <li v-for="repo in filteredIndexedRepos" :key="repo.id" class="repo-item">
             <div class="repo-header">
               <div class="repo-name-section">
                 <svg
@@ -41,7 +41,7 @@
                     d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8ZM5 12.25a.25.25 0 0 1 .25-.25h3.5a.25.25 0 0 1 .25.25v3.25a.25.25 0 0 1-.4.2l-1.45-1.087a.249.249 0 0 0-.3 0L5.4 15.7a.25.25 0 0 1-.4-.2Z"
                   ></path>
                 </svg>
-                <a :href="repo.html_url" target="_blank" class="repo-link">
+                <a :href="repo.html_url" class="repo-link" @click="handleRepoClick">
                   {{ repo.full_name }}
                 </a>
               </div>
@@ -74,13 +74,26 @@
           </li>
         </ul>
 
-        <!-- Stale repos separator and list -->
-        <div v-if="filteredStaleRepos.length > 0" class="stale-section">
-          <div class="stale-separator">Stale repositories (not updated in last 6 months)</div>
-          <ul class="repos-list stale-repos">
-            <li v-for="repo in filteredStaleRepos" :key="repo.id" class="repo-item">
+        <!-- Non-indexed repos separator and list -->
+        <div v-if="filteredNonIndexedRepos.length > 0" class="non-indexed-section">
+          <div class="non-indexed-separator">Not indexed (click + to add)</div>
+          <ul class="repos-list non-indexed-repos">
+            <li v-for="repo in filteredNonIndexedRepos" :key="repo.id" class="repo-item">
               <div class="repo-header">
                 <div class="repo-name-section">
+                  <!-- Add to index button -->
+                  <button
+                    class="add-to-index-btn"
+                    title="Add to index (will sync issues/PRs)"
+                    @click.prevent="addRepoToIndex(repo.id)"
+                  >
+                    <svg viewBox="0 0 16 16" width="14" height="14">
+                      <path
+                        d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z"
+                      ></path>
+                    </svg>
+                  </button>
+
                   <svg
                     v-if="repo.fork"
                     class="repo-type-icon fork"
@@ -103,7 +116,7 @@
                       d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8ZM5 12.25a.25.25 0 0 1 .25-.25h3.5a.25.25 0 0 1 .25.25v3.25a.25.25 0 0 1-.4.2l-1.45-1.087a.249.249 0 0 0-.3 0L5.4 15.7a.25.25 0 0 1-.4-.2Z"
                     ></path>
                   </svg>
-                  <a :href="repo.html_url" target="_blank" class="repo-link">
+                  <a :href="repo.html_url" class="repo-link" @click="handleRepoClick">
                     {{ repo.full_name }}
                   </a>
                 </div>
@@ -115,7 +128,9 @@
 
         <!-- No results message -->
         <div
-          v-if="searchQuery && filteredActiveRepos.length === 0 && filteredStaleRepos.length === 0"
+          v-if="
+            searchQuery && filteredIndexedRepos.length === 0 && filteredNonIndexedRepos.length === 0
+          "
           class="status empty-state"
         >
           No repositories match "{{ searchQuery }}"
@@ -155,11 +170,12 @@ const isDarkTheme = ref(false);
 // Use composables
 const {
   repos,
-  activeRepos,
-  staleRepos,
+  indexedRepos,
+  nonIndexedRepos,
   repoCounts,
   error: reposError,
   loadAll: loadReposData,
+  addRepoToIndex,
 } = useRepos();
 
 const { status: syncStatus } = useSyncStatus(500); // Poll every 500ms for real-time updates
@@ -183,8 +199,8 @@ function filterRepos(reposList: RepoRecord[]): RepoRecord[] {
 }
 
 // Filtered repo lists
-const filteredActiveRepos = computed(() => filterRepos(activeRepos.value));
-const filteredStaleRepos = computed(() => filterRepos(staleRepos.value));
+const filteredIndexedRepos = computed(() => filterRepos(indexedRepos.value));
+const filteredNonIndexedRepos = computed(() => filterRepos(nonIndexedRepos.value));
 
 /**
  * Sync state class for status dot (green/yellow/red)
@@ -215,13 +231,13 @@ const syncStateText = computed(() => {
   const account = status.accountLogin ? `@${status.accountLogin}` : 'Account';
 
   if (status.isRunning) {
-    const { activeRepos, issuesProgress, prsProgress } = status.progress;
+    const { indexedRepos, issuesProgress, prsProgress } = status.progress;
     const progress = Math.max(issuesProgress, prsProgress);
 
-    if (activeRepos === 0) {
+    if (indexedRepos === 0) {
       return `${account}: Syncing...`;
     } else {
-      return `${account}: Syncing ${progress}/${activeRepos}`;
+      return `${account}: Syncing ${progress}/${indexedRepos}`;
     }
   } else if (status.lastCompletedAt) {
     const timeAgo = Math.round((Date.now() - status.lastCompletedAt) / 1000 / 60);
@@ -245,12 +261,12 @@ const syncStateTooltip = computed(() => {
   if (status.lastError) {
     return `Error: ${status.lastError}`;
   } else if (status.isRunning) {
-    const { activeRepos, issuesProgress, prsProgress } = status.progress;
-    return `Syncing: ${issuesProgress}/${activeRepos} issues, ${prsProgress}/${activeRepos} PRs`;
+    const { indexedRepos, issuesProgress, prsProgress } = status.progress;
+    return `Syncing: ${issuesProgress}/${indexedRepos} issues, ${prsProgress}/${indexedRepos} PRs`;
   } else if (status.lastCompletedAt) {
-    const { activeRepos } = status.progress;
+    const { indexedRepos } = status.progress;
     const date = new Date(status.lastCompletedAt).toLocaleString();
-    return `Last synced: ${date} (${activeRepos} active repos)`;
+    return `Last synced: ${date} (${indexedRepos} indexed repos)`;
   } else {
     return 'Not synced yet';
   }
@@ -302,6 +318,19 @@ async function toggle() {
   } else {
     await show();
   }
+}
+
+/**
+ * Handle repo link click - close palette on regular click
+ * But keep open for middle-click or Cmd/Ctrl+click (new tab)
+ */
+function handleRepoClick(event: MouseEvent) {
+  // Don't close if user is opening in new tab (middle click or Cmd/Ctrl+click)
+  if (event.button === 1 || event.ctrlKey || event.metaKey) {
+    return;
+  }
+  // Regular click - close the palette
+  hide();
 }
 
 /**
@@ -476,11 +505,11 @@ defineExpose({
   margin: 0;
 }
 
-.stale-section {
+.non-indexed-section {
   margin-top: 20px;
 }
 
-.stale-separator {
+.non-indexed-separator {
   padding: 12px 16px;
   background: #f6f8fa;
   border-top: 2px solid #e1e4e8;
@@ -491,16 +520,41 @@ defineExpose({
   text-align: center;
 }
 
-.stale-repos .repo-item {
+.non-indexed-repos .repo-item {
   opacity: 0.7;
 }
 
-.stale-repos .repo-link {
+.non-indexed-repos .repo-link {
   color: #6a737d;
 }
 
-.stale-repos .repo-item:hover {
+.non-indexed-repos .repo-item:hover {
   opacity: 1;
+}
+
+.add-to-index-btn {
+  background: transparent;
+  border: 1px solid #d1d5da;
+  border-radius: 4px;
+  padding: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #0366d6;
+  transition:
+    background-color 0.2s,
+    border-color 0.2s;
+  flex-shrink: 0;
+}
+
+.add-to-index-btn:hover {
+  background: #f6f8fa;
+  border-color: #0366d6;
+}
+
+.add-to-index-btn svg {
+  fill: currentColor;
 }
 
 .repo-item {
@@ -616,6 +670,8 @@ defineExpose({
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 1;
+  min-width: 0;
 }
 
 .status-dot {
@@ -661,6 +717,11 @@ defineExpose({
 .status-text {
   color: #586069;
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
 }
 
 .rate-limit-warning {
@@ -719,7 +780,7 @@ defineExpose({
   color: #7d8590;
 }
 
-.dark-theme .stale-separator {
+.dark-theme .non-indexed-separator {
   background: #161b22;
   border-top-color: #30363d;
   border-bottom-color: #30363d;
@@ -738,8 +799,18 @@ defineExpose({
   color: #58a6ff;
 }
 
-.dark-theme .stale-repos .repo-link {
+.dark-theme .non-indexed-repos .repo-link {
   color: #7d8590;
+}
+
+.dark-theme .add-to-index-btn {
+  border-color: #30363d;
+  color: #58a6ff;
+}
+
+.dark-theme .add-to-index-btn:hover {
+  background: #161b22;
+  border-color: #58a6ff;
 }
 
 .dark-theme .repo-desc {

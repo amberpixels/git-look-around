@@ -2,7 +2,13 @@ import { MessageType } from '@/src/messages/types';
 import type { ExtensionMessage } from '@/src/messages/types';
 import { runSync, getSyncStatus, forceSync } from '@/src/sync/engine';
 import { getLastRateLimit } from '@/src/api/github';
-import { getAllRepos, getIssuesByRepo, getPullRequestsByRepo, recordVisit } from '@/src/storage/db';
+import {
+  getAllRepos,
+  getIssuesByRepo,
+  getPullRequestsByRepo,
+  recordVisit,
+  setRepoIndexed,
+} from '@/src/storage/db';
 
 export default defineBackground(() => {
   console.warn('[Background] Gitjump background initialized', { id: browser.runtime.id });
@@ -76,6 +82,16 @@ export default defineBackground(() => {
               entityId: number;
             };
             await recordVisit(type, entityId);
+            sendResponse({ success: true });
+            break;
+          }
+
+          case MessageType.SET_REPO_INDEXED: {
+            const { repoId, indexed } = message.payload as {
+              repoId: number;
+              indexed: boolean;
+            };
+            await setRepoIndexed(repoId, indexed);
             sendResponse({ success: true });
             break;
           }
