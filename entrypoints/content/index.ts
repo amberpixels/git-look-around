@@ -2,7 +2,6 @@ import { createApp } from 'vue';
 import App from './App.vue';
 import { MessageType } from '@/shared/messages';
 import type { ExtensionMessage } from '@/shared/messages';
-import { runSync, forceSync, resetSync, getSyncStatus } from '@/shared/sync-engine';
 
 export default defineContentScript({
   matches: ['*://github.com/*', '*://*.github.com/*'],
@@ -25,55 +24,7 @@ export default defineContentScript({
       }
     });
 
-    // Expose debug functions via custom events
-    // This works around CSP by using DOM events instead of direct script injection
-
-    // Listen for custom events from console
-    document.addEventListener('gitjump:forceSync', () => {
-      console.warn('[Gitjump] Force sync triggered from console');
-      forceSync().catch((err) => console.error('[Gitjump] Force sync failed:', err));
-    });
-
-    document.addEventListener('gitjump:resetSync', () => {
-      console.warn('[Gitjump] Reset sync triggered from console');
-      resetSync().catch((err) => console.error('[Gitjump] Reset sync failed:', err));
-    });
-
-    document.addEventListener('gitjump:getSyncStatus', async () => {
-      const status = await getSyncStatus();
-      console.warn('[Gitjump] Sync Status:', status);
-      document.dispatchEvent(new CustomEvent('gitjump:syncStatusResponse', { detail: status }));
-    });
-
-    document.addEventListener('gitjump:runSync', () => {
-      console.warn('[Gitjump] Manual sync triggered from console');
-      runSync().catch((err) => console.error('[Gitjump] Manual sync failed:', err));
-    });
-
-    console.warn(
-      `
-╔═══════════════════════════════════════════════════════════════╗
-║          Gitjump Debug Commands (Copy & Paste):               ║
-╠═══════════════════════════════════════════════════════════════╣
-║  Force sync:                                                  ║
-║  document.dispatchEvent(new Event('gitjump:forceSync'))       ║
-║                                                               ║
-║  Reset sync:                                                  ║
-║  document.dispatchEvent(new Event('gitjump:resetSync'))       ║
-║                                                               ║
-║  Check status:                                                ║
-║  document.dispatchEvent(new Event('gitjump:getSyncStatus'))   ║
-║                                                               ║
-║  Normal sync:                                                 ║
-║  document.dispatchEvent(new Event('gitjump:runSync'))         ║
-╚═══════════════════════════════════════════════════════════════╝
-    `.trim(),
-    );
-
-    // Trigger sync in the background (non-blocking)
-    // This will check if sync is needed and run it if appropriate
-    runSync().catch((err) => {
-      console.error('[Gitjump] Background sync failed:', err);
-    });
+    // Debug commands removed - sync now happens in background worker
+    // Use the command palette to manually trigger sync if needed
   },
 });

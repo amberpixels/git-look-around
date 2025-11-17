@@ -3,7 +3,12 @@
  * Completely decoupled from UI - runs independently and saves in chunks
  */
 
-import { getUserRepos, getRepoIssues, getRepoPullRequests } from './github-api';
+import {
+  getUserRepos,
+  getRepoIssues,
+  getRepoPullRequests,
+  getAuthenticatedUser,
+} from './github-api';
 import { saveRepos, saveIssues, savePullRequests, getMeta, setMeta } from './db';
 import type { RepoRecord, IssueRecord, PullRequestRecord } from './types';
 
@@ -18,6 +23,7 @@ export interface SyncStatus {
   lastStartedAt: number | null;
   lastCompletedAt: number | null;
   lastError: string | null;
+  accountLogin: string | null; // GitHub username (e.g. "amberpixels")
   progress: {
     totalRepos: number; // Total non-stale repos
     activeRepos: number; // Number of non-stale repos
@@ -37,11 +43,12 @@ const MIN_SYNC_INTERVAL_MS = 5 * 60 * 1000; // Don't sync more often than every 
 export async function getSyncStatus(): Promise<SyncStatus> {
   const status = await getMeta(SYNC_STATUS_KEY);
   return (
-    status || {
+    (status as SyncStatus) || {
       isRunning: false,
       lastStartedAt: null,
       lastCompletedAt: null,
       lastError: null,
+      accountLogin: null,
       progress: {
         totalRepos: 0,
         activeRepos: 0,
@@ -59,7 +66,9 @@ export async function getSyncStatus(): Promise<SyncStatus> {
  */
 async function updateSyncStatus(updates: Partial<SyncStatus>): Promise<void> {
   const current = await getSyncStatus();
-  await setMeta(SYNC_STATUS_KEY, { ...current, ...updates });
+  const newStatus = { ...current, ...updates };
+  await setMeta(SYNC_STATUS_KEY, newStatus);
+  console.warn('[Sync] Status updated:', JSON.stringify(newStatus, null, 2));
 }
 
 /**
@@ -129,22 +138,28 @@ export async function runSync(): Promise<void> {
 
   console.warn('[Sync] Starting sync...');
 
-  // Mark sync as running
-  await updateSyncStatus({
-    isRunning: true,
-    lastStartedAt: Date.now(),
-    lastError: null,
-    progress: {
-      totalRepos: 0,
-      activeRepos: 0,
-      staleRepos: 0,
-      issuesProgress: 0,
-      prsProgress: 0,
-      currentRepo: null,
-    },
-  });
-
   try {
+    // Step 0: Get authenticated user info
+    const user = await getAuthenticatedUser();
+    const accountLogin = user.login || null;
+    console.warn(`[Sync] Syncing account: ${accountLogin}`);
+
+    // Mark sync as running
+    await updateSyncStatus({
+      isRunning: true,
+      lastStartedAt: Date.now(),
+      lastError: null,
+      accountLogin,
+      progress: {
+        totalRepos: 0,
+        activeRepos: 0,
+        staleRepos: 0,
+        issuesProgress: 0,
+        prsProgress: 0,
+        currentRepo: null,
+      },
+    });
+
     // Step 1: Fetch all repos and count them
     console.warn('[Sync] Fetching repositories...');
     const allRepos = await getUserRepos();
@@ -168,6 +183,7 @@ export async function runSync(): Promise<void> {
 
     // Update progress with repo counts
     await updateSyncStatus({
+      accountLogin,
       progress: {
         totalRepos: allRepos.length,
         activeRepos: activeRepos.length,
@@ -281,6 +297,7 @@ export async function runSync(): Promise<void> {
       isRunning: false,
       lastCompletedAt: Date.now(),
       lastError: null,
+      accountLogin,
       progress: {
         totalRepos: allRepos.length,
         activeRepos: activeRepos.length,

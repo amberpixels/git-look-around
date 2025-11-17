@@ -53,6 +53,7 @@ export async function githubFetch(path: string, options: RequestInit = {}): Prom
     };
     // Store in IndexedDB so it's accessible from all contexts (popup, content script)
     await setMeta(RATE_LIMIT_META_KEY, rateLimitInfo);
+    console.warn('[GitHub API] Rate limit updated:', rateLimitInfo);
   }
 
   if (!response.ok) {
@@ -75,7 +76,8 @@ export async function githubFetch(path: string, options: RequestInit = {}): Prom
  * Get the last known rate limit info from IndexedDB
  */
 export async function getLastRateLimit(): Promise<RateLimitInfo | null> {
-  return await getMeta(RATE_LIMIT_META_KEY);
+  const value = await getMeta(RATE_LIMIT_META_KEY);
+  return value as RateLimitInfo | null;
 }
 
 /**

@@ -1,7 +1,8 @@
 <script lang="ts" setup>
 import { ref, onMounted, onUnmounted } from 'vue';
-import { validateToken, getLastRateLimit } from '@/shared/github-api';
-import { getSyncStatus } from '@/shared/sync-engine';
+import { isAuthenticated as checkAuth } from '@/shared/storage';
+import { MessageType } from '@/shared/messages';
+import type { ExtensionMessage } from '@/shared/messages';
 import type { RateLimitInfo } from '@/shared/github-api';
 import type { SyncStatus } from '@/shared/sync-engine';
 
@@ -10,25 +11,48 @@ const loading = ref(true);
 const rateLimit = ref<RateLimitInfo | null>(null);
 const syncStatusText = ref<string>('');
 
+// Helper to send messages to background
+async function sendMessage<T>(type: MessageType, payload?: unknown): Promise<T> {
+  const message: ExtensionMessage = { type, payload };
+  return new Promise((resolve, reject) => {
+    browser.runtime.sendMessage(message, (response) => {
+      if (response?.success) {
+        resolve(response.data as T);
+      } else {
+        reject(new Error(response?.error || 'Unknown error'));
+      }
+    });
+  });
+}
+
 onMounted(async () => {
   try {
-    isAuthenticated.value = await validateToken();
+    isAuthenticated.value = await checkAuth();
 
-    // Load initial rate limit and sync status
-    rateLimit.value = await getLastRateLimit();
-    const status = await getSyncStatus();
+    // Load initial rate limit and sync status from background
+    rateLimit.value = await sendMessage<RateLimitInfo | null>(MessageType.GET_RATE_LIMIT);
+    console.warn('[Popup] Rate limit from background:', rateLimit.value);
+
+    const status = await sendMessage<SyncStatus>(MessageType.GET_SYNC_STATUS);
+    console.warn('[Popup] Sync status from background:', status);
     updateSyncStatusText(status);
 
     // Poll for updates every 5 seconds while popup is open
     const interval = window.setInterval(async () => {
-      const updatedStatus = await getSyncStatus();
-      updateSyncStatusText(updatedStatus);
-      rateLimit.value = await getLastRateLimit();
+      try {
+        const updatedStatus = await sendMessage<SyncStatus>(MessageType.GET_SYNC_STATUS);
+        console.warn('[Popup] Sync status updated:', updatedStatus);
+        updateSyncStatusText(updatedStatus);
+        rateLimit.value = await sendMessage<RateLimitInfo | null>(MessageType.GET_RATE_LIMIT);
+      } catch (err) {
+        console.error('[Popup] Error polling status:', err);
+      }
     }, 5000);
 
     // Cleanup on unmount
     onUnmounted(() => window.clearInterval(interval));
-  } catch {
+  } catch (err) {
+    console.error('[Popup] Error during mount:', err);
     isAuthenticated.value = false;
   } finally {
     loading.value = false;
@@ -38,14 +62,19 @@ onMounted(async () => {
 function updateSyncStatusText(status: SyncStatus) {
   if (status.isRunning) {
     const { activeRepos, issuesProgress, prsProgress } = status.progress;
+    const account = status.accountLogin ? `@${status.accountLogin}: ` : '';
     if (activeRepos > 0) {
-      syncStatusText.value = `Syncing ${Math.max(issuesProgress, prsProgress)}/${activeRepos}...`;
+      syncStatusText.value = `${account}Syncing ${Math.max(issuesProgress, prsProgress)}/${activeRepos}...`;
     } else {
-      syncStatusText.value = 'Syncing...';
+      syncStatusText.value = `${account}Syncing...`;
     }
   } else if (status.lastCompletedAt) {
     const minutes = Math.round((Date.now() - status.lastCompletedAt) / 60000);
-    syncStatusText.value = minutes === 0 ? 'Just synced' : `Last synced ${minutes}m ago`;
+    const { activeRepos } = status.progress;
+    const account = status.accountLogin ? `@${status.accountLogin}` : 'Account';
+    const repoCount = activeRepos > 0 ? ` (${activeRepos} repos)` : '';
+    const timeAgo = minutes === 0 ? 'just now' : `${minutes}m ago`;
+    syncStatusText.value = `${account}${repoCount} synced ${timeAgo}`;
   } else {
     syncStatusText.value = 'Not synced yet';
   }
