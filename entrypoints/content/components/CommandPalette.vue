@@ -7,9 +7,8 @@
           ref="searchInputRef"
           v-model="searchQuery"
           type="text"
-          placeholder="Search repositories..."
           class="search-input"
-          @keydown.escape="hide"
+          @keydown="handleSearchKeydown"
         />
       </div>
 
@@ -22,7 +21,13 @@
       <div v-else class="repos-container">
         <!-- Indexed repos (actively synced) -->
         <ul v-if="filteredIndexedRepos.length > 0" class="repos-list">
-          <li v-for="repo in filteredIndexedRepos" :key="repo.id" class="repo-item">
+          <li
+            v-for="repo in filteredIndexedRepos"
+            :key="repo.id"
+            class="repo-item"
+            :class="{ focused: isRepoFocused(repo) }"
+            :title="repo.description || ''"
+          >
             <div class="repo-header">
               <div class="repo-name-section">
                 <svg
@@ -70,7 +75,6 @@
                 </span>
               </div>
             </div>
-            <div v-if="repo.description" class="repo-desc">{{ repo.description }}</div>
           </li>
         </ul>
 
@@ -82,6 +86,7 @@
               v-for="repo in filteredNonIndexedRepos"
               :key="repo.id"
               class="repo-item"
+              :class="{ focused: isRepoFocused(repo) }"
               :title="repo.description || ''"
             >
               <div class="repo-header">
@@ -169,6 +174,7 @@ const searchQuery = ref('');
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const searchInputRef = ref<any>(null);
 const isDarkTheme = ref(false);
+const focusedIndex = ref(0); // Index of currently focused repo
 
 // Use composables
 const {
@@ -186,6 +192,43 @@ const { rateLimit } = useRateLimit(0);
 const { preferences } = useSyncPreferences();
 
 /**
+ * Detect current GitHub repo from URL
+ * Returns full_name like "owner/repo" or null if not on a repo page
+ */
+function getCurrentRepoFromUrl(): string | null {
+  const match = window.location.pathname.match(/^\/([^/]+)\/([^/]+)/);
+  if (match) {
+    return `${match[1]}/${match[2]}`;
+  }
+  return null;
+}
+
+/**
+ * Apply quick-switcher logic: deprioritize or hide current repo
+ * - If both PRs and Issues are disabled: hide current repo completely
+ * - Otherwise: swap positions of 1st and 2nd repos if 1st is current
+ */
+function applyQuickSwitcherLogic(reposList: RepoRecord[]): RepoRecord[] {
+  const currentRepoName = getCurrentRepoFromUrl();
+  if (!currentRepoName) {
+    return reposList; // Not on a repo page, show all repos as-is
+  }
+
+  const showingPrsOrIssues = preferences.value.syncIssues || preferences.value.syncPullRequests;
+
+  if (!showingPrsOrIssues) {
+    // Hide current repo completely
+    return reposList.filter((repo) => repo.full_name !== currentRepoName);
+  } else {
+    // Swap 1st and 2nd if 1st is current repo
+    if (reposList.length >= 2 && reposList[0].full_name === currentRepoName) {
+      return [reposList[1], reposList[0], ...reposList.slice(2)];
+    }
+    return reposList;
+  }
+}
+
+/**
  * Filter repos by search query (simple substring match)
  */
 function filterRepos(reposList: RepoRecord[]): RepoRecord[] {
@@ -201,9 +244,71 @@ function filterRepos(reposList: RepoRecord[]): RepoRecord[] {
   );
 }
 
-// Filtered repo lists
-const filteredIndexedRepos = computed(() => filterRepos(indexedRepos.value));
+// Filtered repo lists with quick-switcher logic applied
+const filteredIndexedRepos = computed(() => {
+  const filtered = filterRepos(indexedRepos.value);
+  return applyQuickSwitcherLogic(filtered);
+});
+
 const filteredNonIndexedRepos = computed(() => filterRepos(nonIndexedRepos.value));
+
+/**
+ * All visible repos combined (indexed + non-indexed)
+ */
+const allVisibleRepos = computed(() => [
+  ...filteredIndexedRepos.value,
+  ...filteredNonIndexedRepos.value,
+]);
+
+/**
+ * Check if a repo is focused
+ */
+function isRepoFocused(repo: RepoRecord): boolean {
+  const visibleRepos = allVisibleRepos.value;
+  const index = visibleRepos.findIndex((r) => r.id === repo.id);
+  return index === focusedIndex.value;
+}
+
+/**
+ * Navigate focus up/down with arrow keys
+ */
+function moveFocus(direction: 'up' | 'down') {
+  const maxIndex = allVisibleRepos.value.length - 1;
+  if (maxIndex < 0) return;
+
+  if (direction === 'down') {
+    focusedIndex.value = Math.min(focusedIndex.value + 1, maxIndex);
+  } else {
+    focusedIndex.value = Math.max(focusedIndex.value - 1, 0);
+  }
+}
+
+/**
+ * Navigate to focused repo (triggered by Enter key)
+ */
+function navigateToFocusedRepo() {
+  const repo = allVisibleRepos.value[focusedIndex.value];
+  if (repo) {
+    window.location.href = repo.html_url;
+    hide();
+  }
+}
+
+/**
+ * Handle keyboard navigation in search input
+ */
+function handleSearchKeydown(e: KeyboardEvent) {
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    moveFocus('down');
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    moveFocus('up');
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    navigateToFocusedRepo();
+  }
+}
 
 /**
  * Sync state class for status dot (green/yellow/red)
@@ -304,6 +409,7 @@ const rateLimitTooltip = computed(() => {
 async function show() {
   isVisible.value = true;
   searchQuery.value = ''; // Reset search on open
+  focusedIndex.value = 0; // Reset focus to first item
   // Load data immediately
   await loadReposData();
   // Focus input field
@@ -449,33 +555,24 @@ defineExpose({
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
 }
 
-/* (1) Search bar */
+/* (1) Search bar - styled as "zeroth row" */
 .search-bar {
-  padding: 16px 20px;
+  padding: 0;
   border-bottom: 1px solid #e1e4e8;
-  background: #fafbfc;
+  background: white;
 }
 
 .search-input {
   width: 100%;
-  padding: 10px 14px;
-  font-size: 16px;
-  border: 1px solid #d1d5da;
-  border-radius: 6px;
+  padding: 8px 12px;
+  padding-left: 32px; /* Align with repo names (12px base + 14px icon + 6px gap) */
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
   outline: none;
   font-family: inherit;
-  transition:
-    border-color 0.2s,
-    box-shadow 0.2s;
-}
-
-.search-input:focus {
-  border-color: #0366d6;
-  box-shadow: 0 0 0 3px rgba(3, 102, 214, 0.1);
-}
-
-.search-input::placeholder {
-  color: #6a737d;
+  background: transparent;
+  color: #0366d6;
 }
 
 /* (2) Main content area */
@@ -531,10 +628,6 @@ defineExpose({
   color: #6a737d;
 }
 
-.non-indexed-repos .repo-item:hover {
-  opacity: 1;
-}
-
 .add-to-index-btn {
   background: transparent;
   border: 1px solid #d1d5da;
@@ -569,7 +662,7 @@ defineExpose({
   border-bottom: none;
 }
 
-.repo-item:hover {
+.repo-item.focused {
   background: #f6f8fa;
 }
 
@@ -752,23 +845,13 @@ defineExpose({
 }
 
 .dark-theme .search-bar {
-  background: #161b22;
+  background: #0d1117;
   border-bottom-color: #30363d;
 }
 
 .dark-theme .search-input {
-  background: #0d1117;
-  border-color: #30363d;
-  color: #e6edf3;
-}
-
-.dark-theme .search-input::placeholder {
-  color: #7d8590;
-}
-
-.dark-theme .search-input:focus {
-  border-color: #58a6ff;
-  box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
+  background: transparent;
+  color: #58a6ff;
 }
 
 .dark-theme .status {
@@ -794,7 +877,7 @@ defineExpose({
   border-bottom-color: #21262d;
 }
 
-.dark-theme .repo-item:hover {
+.dark-theme .repo-item.focused {
   background: #161b22;
 }
 
