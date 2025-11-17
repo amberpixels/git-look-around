@@ -119,11 +119,11 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { getAllRepos, getIssuesByRepo, getPullRequestsByRepo } from '@/shared/db';
-import { getSyncStatus, forceSync } from '@/shared/sync-engine';
-import { getLastRateLimit } from '@/shared/github-api';
+import { MessageType } from '@/shared/messages';
+import type { ExtensionMessage } from '@/shared/messages';
 import type { RepoRecord } from '@/shared/types';
 import type { RateLimitInfo } from '@/shared/github-api';
+import type { SyncStatus } from '@/shared/sync-engine';
 
 const isVisible = ref(false);
 const repos = ref<RepoRecord[]>([]);
@@ -167,15 +167,29 @@ function sortReposByPushedAt(repos: RepoRecord[]): RepoRecord[] {
   });
 }
 
+// Helper to send messages to background
+async function sendMessage<T>(type: MessageType, payload?: unknown): Promise<T> {
+  const message: ExtensionMessage = { type, payload };
+  return new Promise((resolve, reject) => {
+    browser.runtime.sendMessage(message, (response) => {
+      if (response?.success) {
+        resolve(response.data as T);
+      } else {
+        reject(new Error(response?.error || 'Unknown error'));
+      }
+    });
+  });
+}
+
 /**
- * Load data from IndexedDB (pure DB read, no API calls)
+ * Load data from background worker
  */
 async function loadFromDB() {
   try {
     error.value = '';
 
-    // Load repos from DB
-    const dbRepos = await getAllRepos();
+    // Load repos from background
+    const dbRepos = await sendMessage<RepoRecord[]>(MessageType.GET_ALL_REPOS);
     repos.value = dbRepos;
 
     // Sort all repos by pushed_at
@@ -214,7 +228,7 @@ async function loadFromDB() {
  * Update rate limit display
  */
 async function updateRateLimitDisplay() {
-  const limit = await getLastRateLimit();
+  const limit = await sendMessage<RateLimitInfo | null>(MessageType.GET_RATE_LIMIT);
   if (limit) {
     rateLimit.value = limit;
   }
@@ -232,7 +246,7 @@ function getRateLimitStatus(): 'good' | 'warning' | 'limited' {
 }
 
 /**
- * Load issue and PR counts for each repo from DB
+ * Load issue and PR counts for each repo from background
  */
 async function loadCounts() {
   const counts: Record<number, { issues: number; prs: number }> = {};
@@ -241,8 +255,8 @@ async function loadCounts() {
   await Promise.all(
     repos.value.map(async (repo) => {
       const [issues, prs] = await Promise.all([
-        getIssuesByRepo(repo.id),
-        getPullRequestsByRepo(repo.id),
+        sendMessage(MessageType.GET_ISSUES_BY_REPO, repo.id),
+        sendMessage(MessageType.GET_PRS_BY_REPO, repo.id),
       ]);
       counts[repo.id] = {
         issues: issues.length,
@@ -258,30 +272,30 @@ async function loadCounts() {
  * Update sync status display
  */
 async function updateSyncStatusDisplay() {
-  const status = await getSyncStatus();
+  const status = await sendMessage<SyncStatus>(MessageType.GET_SYNC_STATUS);
   isSyncing.value = status.isRunning;
+
+  const account = status.accountLogin ? `@${status.accountLogin}` : 'Account';
 
   if (status.isRunning) {
     const { activeRepos, issuesProgress, prsProgress } = status.progress;
 
     if (activeRepos === 0) {
       // Still fetching repos
-      syncStatus.value = 'Fetching repositories...';
+      syncStatus.value = `${account}: Fetching repositories...`;
     } else if (issuesProgress === 0 && prsProgress === 0) {
       // Repos fetched, starting to sync issues/PRs
-      syncStatus.value = `${activeRepos} Repos, Starting sync...`;
+      syncStatus.value = `${account}: ${activeRepos} repos, starting sync...`;
     } else {
       // Syncing issues and PRs
-      syncStatus.value = `${activeRepos} Repos, Syncing Issues ${issuesProgress}/${activeRepos}, PRs ${prsProgress}/${activeRepos}`;
+      syncStatus.value = `${account}: ${activeRepos} repos, syncing issues ${issuesProgress}/${activeRepos}, PRs ${prsProgress}/${activeRepos}`;
     }
   } else if (status.lastCompletedAt) {
     const timeAgo = Math.round((Date.now() - status.lastCompletedAt) / 1000 / 60);
     const { activeRepos } = status.progress;
-    if (activeRepos > 0) {
-      syncStatus.value = `${activeRepos} Repos, Last synced ${timeAgo}m ago`;
-    } else {
-      syncStatus.value = `Last synced ${timeAgo}m ago`;
-    }
+    const repoText = activeRepos > 0 ? `${activeRepos} repos` : 'repos';
+    const timeText = timeAgo === 0 ? 'just now' : `${timeAgo}m ago`;
+    syncStatus.value = `${account}: ${repoText}, synced ${timeText}`;
   } else {
     syncStatus.value = 'Not synced yet';
   }
@@ -292,7 +306,7 @@ async function updateSyncStatusDisplay() {
  */
 async function triggerSync() {
   try {
-    await forceSync();
+    await sendMessage(MessageType.FORCE_SYNC);
     // Reload data after sync completes
     await loadFromDB();
   } catch (e) {
