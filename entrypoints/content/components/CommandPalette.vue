@@ -78,22 +78,14 @@
         <div v-if="filteredNonIndexedRepos.length > 0" class="non-indexed-section">
           <div class="non-indexed-separator">Not indexed (click + to add)</div>
           <ul class="repos-list non-indexed-repos">
-            <li v-for="repo in filteredNonIndexedRepos" :key="repo.id" class="repo-item">
+            <li
+              v-for="repo in filteredNonIndexedRepos"
+              :key="repo.id"
+              class="repo-item"
+              :title="repo.description || ''"
+            >
               <div class="repo-header">
                 <div class="repo-name-section">
-                  <!-- Add to index button -->
-                  <button
-                    class="add-to-index-btn"
-                    title="Add to index (will sync issues/PRs)"
-                    @click.prevent="addRepoToIndex(repo.id)"
-                  >
-                    <svg viewBox="0 0 16 16" width="14" height="14">
-                      <path
-                        d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z"
-                      ></path>
-                    </svg>
-                  </button>
-
                   <svg
                     v-if="repo.fork"
                     class="repo-type-icon fork"
@@ -120,8 +112,19 @@
                     {{ repo.full_name }}
                   </a>
                 </div>
+                <!-- Add to index button (right side) -->
+                <button
+                  class="add-to-index-btn"
+                  title="Add to index (will sync issues/PRs)"
+                  @click.prevent="addRepoToIndex(repo.id)"
+                >
+                  <svg viewBox="0 0 16 16" width="14" height="14">
+                    <path
+                      d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z"
+                    ></path>
+                  </svg>
+                </button>
               </div>
-              <div v-if="repo.description" class="repo-desc">{{ repo.description }}</div>
             </li>
           </ul>
         </div>
