@@ -5,7 +5,16 @@
 
 const STORAGE_KEYS = {
   GITHUB_TOKEN: 'github_token',
+  SYNC_PREFERENCES: 'sync_preferences',
 } as const;
+
+/**
+ * User preferences for what to sync
+ */
+export interface SyncPreferences {
+  syncIssues: boolean;
+  syncPullRequests: boolean;
+}
 
 /**
  * Save GitHub personal access token
@@ -37,4 +46,29 @@ export async function removeGitHubToken(): Promise<void> {
 export async function isAuthenticated(): Promise<boolean> {
   const token = await getGitHubToken();
   return !!token;
+}
+
+/**
+ * Get sync preferences (defaults: sync both issues and PRs)
+ */
+export async function getSyncPreferences(): Promise<SyncPreferences> {
+  const result = await browser.storage.local.get(STORAGE_KEYS.SYNC_PREFERENCES);
+  const prefs = result[STORAGE_KEYS.SYNC_PREFERENCES] as SyncPreferences | undefined;
+
+  // Default: sync both
+  return (
+    prefs || {
+      syncIssues: true,
+      syncPullRequests: true,
+    }
+  );
+}
+
+/**
+ * Save sync preferences
+ */
+export async function saveSyncPreferences(preferences: SyncPreferences): Promise<void> {
+  await browser.storage.local.set({
+    [STORAGE_KEYS.SYNC_PREFERENCES]: preferences,
+  });
 }

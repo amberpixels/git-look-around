@@ -1,33 +1,28 @@
 <template>
   <div v-if="isVisible" class="gitjump-overlay" @click="handleBackdropClick">
-    <div class="gitjump-popup">
-      <div class="popup-header">
-        <h2>Your Repositories</h2>
-        <div class="header-right">
-          <div class="sync-status">
-            <span :class="{ syncing: isSyncing }">{{ syncStatusText }}</span>
-            <button v-if="!isSyncing" class="sync-button" @click="triggerSync">↻ Sync</button>
-          </div>
-          <div v-if="rateLimit" class="rate-limit-compact">
-            <span
-              class="rate-limit-dot"
-              :class="getRateLimitStatus()"
-              :title="`API: ${rateLimit.remaining}/${rateLimit.limit}`"
-            ></span>
-            <span class="rate-limit-label">Connected</span>
-          </div>
-        </div>
+    <div class="gitjump-popup" :class="{ 'dark-theme': isDarkTheme }">
+      <!-- (1) Search input bar -->
+      <div class="search-bar">
+        <input
+          ref="searchInputRef"
+          v-model="searchQuery"
+          type="text"
+          placeholder="Search repositories..."
+          class="search-input"
+          @keydown.escape="hide"
+        />
       </div>
 
+      <!-- (2) Main content: repos list -->
       <div v-if="reposError" class="status error">{{ reposError }}</div>
-      <div v-else-if="repos.length === 0" class="status">
-        No repos in database yet. Click "Sync" to sync from GitHub.
+      <div v-else-if="repos.length === 0" class="status empty-state">
+        No repos in database yet. Sync will happen automatically.
       </div>
 
       <div v-else class="repos-container">
         <!-- Active repos (non-stale) -->
-        <ul v-if="activeRepos.length > 0" class="repos-list">
-          <li v-for="repo in activeRepos" :key="repo.id" class="repo-item">
+        <ul v-if="filteredActiveRepos.length > 0" class="repos-list">
+          <li v-for="repo in filteredActiveRepos" :key="repo.id" class="repo-item">
             <div class="repo-header">
               <div class="repo-name-section">
                 <svg
@@ -50,8 +45,13 @@
                   {{ repo.full_name }}
                 </a>
               </div>
-              <div v-if="repoCounts[repo.id]" class="repo-counts">
-                <span class="count-item issues">
+              <div
+                v-if="
+                  repoCounts[repo.id] && (preferences.syncIssues || preferences.syncPullRequests)
+                "
+                class="repo-counts"
+              >
+                <span v-if="preferences.syncIssues" class="count-item issues">
                   <svg class="icon" viewBox="0 0 16 16" width="14" height="14">
                     <path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"></path>
                     <path
@@ -60,7 +60,7 @@
                   </svg>
                   {{ repoCounts[repo.id].issues }}
                 </span>
-                <span class="count-item prs">
+                <span v-if="preferences.syncPullRequests" class="count-item prs">
                   <svg class="icon" viewBox="0 0 16 16" width="14" height="14">
                     <path
                       d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"
@@ -75,10 +75,10 @@
         </ul>
 
         <!-- Stale repos separator and list -->
-        <div v-if="staleRepos.length > 0" class="stale-section">
+        <div v-if="filteredStaleRepos.length > 0" class="stale-section">
           <div class="stale-separator">Stale repositories (not updated in last 6 months)</div>
           <ul class="repos-list stale-repos">
-            <li v-for="repo in staleRepos" :key="repo.id" class="repo-item">
+            <li v-for="repo in filteredStaleRepos" :key="repo.id" class="repo-item">
               <div class="repo-header">
                 <div class="repo-name-section">
                   <svg
@@ -112,18 +112,45 @@
             </li>
           </ul>
         </div>
+
+        <!-- No results message -->
+        <div
+          v-if="searchQuery && filteredActiveRepos.length === 0 && filteredStaleRepos.length === 0"
+          class="status empty-state"
+        >
+          No repositories match "{{ searchQuery }}"
+        </div>
+      </div>
+
+      <!-- (3) Status bar at bottom -->
+      <div class="status-bar">
+        <div class="status-indicator">
+          <span class="status-dot" :class="syncStateClass" :title="syncStateTooltip"></span>
+          <span class="status-text">{{ syncStateText }}</span>
+        </div>
+
+        <!-- Rate limit warning (only shown when close to limit) -->
+        <div v-if="showRateLimitWarning" class="rate-limit-warning" :title="rateLimitTooltip">
+          ⚠️
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, nextTick, onUnmounted } from 'vue';
 import { useRepos } from '@/src/composables/useRepos';
 import { useSyncStatus } from '@/src/composables/useSyncStatus';
 import { useRateLimit } from '@/src/composables/useRateLimit';
+import { useSyncPreferences } from '@/src/composables/useSyncPreferences';
+import type { RepoRecord } from '@/src/types';
 
 const isVisible = ref(false);
+const searchQuery = ref('');
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const searchInputRef = ref<any>(null);
+const isDarkTheme = ref(false);
 
 // Use composables
 const {
@@ -135,11 +162,53 @@ const {
   loadAll: loadReposData,
 } = useRepos();
 
-const { status: syncStatus, forceSync } = useSyncStatus(0); // No auto-polling in overlay
-const { rateLimit, getRateLimitStatus } = useRateLimit(0);
+const { status: syncStatus } = useSyncStatus(0); // No auto-polling in overlay
+const { rateLimit } = useRateLimit(0);
+const { preferences } = useSyncPreferences();
 
-// Computed sync status text
-const syncStatusText = computed(() => {
+/**
+ * Filter repos by search query (simple substring match)
+ */
+function filterRepos(reposList: RepoRecord[]): RepoRecord[] {
+  if (!searchQuery.value.trim()) {
+    return reposList;
+  }
+
+  const query = searchQuery.value.toLowerCase();
+  return reposList.filter(
+    (repo) =>
+      repo.full_name.toLowerCase().includes(query) ||
+      (repo.description?.toLowerCase().includes(query) ?? false),
+  );
+}
+
+// Filtered repo lists
+const filteredActiveRepos = computed(() => filterRepos(activeRepos.value));
+const filteredStaleRepos = computed(() => filterRepos(staleRepos.value));
+
+/**
+ * Sync state class for status dot (green/yellow/red)
+ */
+const syncStateClass = computed(() => {
+  if (!syncStatus.value) return 'loading';
+
+  const status = syncStatus.value;
+
+  if (status.lastError) {
+    return 'error'; // Red
+  } else if (status.isRunning) {
+    return 'syncing'; // Yellow
+  } else if (status.lastCompletedAt) {
+    return 'synced'; // Green
+  } else {
+    return 'not-synced'; // Red
+  }
+});
+
+/**
+ * Sync state text (short summary)
+ */
+const syncStateText = computed(() => {
   if (!syncStatus.value) return 'Loading...';
 
   const status = syncStatus.value;
@@ -147,44 +216,80 @@ const syncStatusText = computed(() => {
 
   if (status.isRunning) {
     const { activeRepos, issuesProgress, prsProgress } = status.progress;
+    const progress = Math.max(issuesProgress, prsProgress);
 
     if (activeRepos === 0) {
-      return `${account}: Fetching repositories...`;
-    } else if (issuesProgress === 0 && prsProgress === 0) {
-      return `${account}: ${activeRepos} repos, starting sync...`;
+      return `${account}: Syncing...`;
     } else {
-      return `${account}: ${activeRepos} repos, syncing issues ${issuesProgress}/${activeRepos}, PRs ${prsProgress}/${activeRepos}`;
+      return `${account}: Syncing ${progress}/${activeRepos}`;
     }
   } else if (status.lastCompletedAt) {
     const timeAgo = Math.round((Date.now() - status.lastCompletedAt) / 1000 / 60);
-    const { activeRepos } = status.progress;
-    const repoText = activeRepos > 0 ? `${activeRepos} repos` : 'repos';
     const timeText = timeAgo === 0 ? 'just now' : `${timeAgo}m ago`;
-    return `${account}: ${repoText}, synced ${timeText}`;
+    return `${account} - synced ${timeText}`;
+  } else if (status.lastError) {
+    return `${account} - sync failed`;
+  } else {
+    return `${account} - not synced`;
+  }
+});
+
+/**
+ * Sync state tooltip (detailed info)
+ */
+const syncStateTooltip = computed(() => {
+  if (!syncStatus.value) return 'Loading sync status...';
+
+  const status = syncStatus.value;
+
+  if (status.lastError) {
+    return `Error: ${status.lastError}`;
+  } else if (status.isRunning) {
+    const { activeRepos, issuesProgress, prsProgress } = status.progress;
+    return `Syncing: ${issuesProgress}/${activeRepos} issues, ${prsProgress}/${activeRepos} PRs`;
+  } else if (status.lastCompletedAt) {
+    const { activeRepos } = status.progress;
+    const date = new Date(status.lastCompletedAt).toLocaleString();
+    return `Last synced: ${date} (${activeRepos} active repos)`;
   } else {
     return 'Not synced yet';
   }
 });
 
-const isSyncing = computed(() => syncStatus.value?.isRunning ?? false);
+/**
+ * Show rate limit warning only when close to 10% remaining
+ */
+const showRateLimitWarning = computed(() => {
+  if (!rateLimit.value) return false;
+
+  const remaining = rateLimit.value.remaining;
+  const limit = rateLimit.value.limit;
+  const percentRemaining = (remaining / limit) * 100;
+
+  return percentRemaining < 10;
+});
 
 /**
- * Manually trigger a sync
+ * Rate limit tooltip
  */
-async function triggerSync() {
-  try {
-    await forceSync();
-    // Reload data after sync completes
-    await loadReposData();
-  } catch (e) {
-    console.error('Manual sync failed:', e);
-  }
-}
+const rateLimitTooltip = computed(() => {
+  if (!rateLimit.value) return '';
+
+  const { remaining, limit, reset } = rateLimit.value;
+  const resetDate = new Date(reset * 1000);
+  const resetTime = resetDate.toLocaleTimeString();
+
+  return `${remaining}/${limit} requests remaining, resets at ${resetTime}`;
+});
 
 async function show() {
   isVisible.value = true;
+  searchQuery.value = ''; // Reset search on open
   // Load data immediately
   await loadReposData();
+  // Focus input field
+  await nextTick();
+  searchInputRef.value?.focus();
 }
 
 function hide() {
@@ -199,10 +304,66 @@ async function toggle() {
   }
 }
 
+/**
+ * Detect dark theme preference
+ * Checks both OS-level and GitHub's theme
+ */
+function detectDarkTheme(): boolean {
+  // Method 1: Check GitHub's theme (most accurate for GitHub pages)
+  const htmlElement = document.documentElement;
+  const githubTheme = htmlElement.getAttribute('data-color-mode');
+  const githubDarkTheme = htmlElement.getAttribute('data-dark-theme');
+
+  if (githubTheme === 'dark' || githubDarkTheme) {
+    return true;
+  }
+
+  // Method 2: Check OS-level preference
+  if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    return true;
+  }
+
+  // Method 3: Fallback - check if GitHub has dark class
+  if (document.body.classList.contains('dark') || document.body.classList.contains('dark-theme')) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Update dark theme state
+ */
+function updateTheme() {
+  isDarkTheme.value = detectDarkTheme();
+  console.warn('[CommandPalette] Theme detected:', isDarkTheme.value ? 'dark' : 'light');
+}
+
 // Auto-load data when component mounts (content script loads)
 onMounted(async () => {
   // Silently load data in background so it's ready when user opens overlay
   await loadReposData();
+
+  // Detect initial theme
+  updateTheme();
+
+  // Listen for OS-level theme changes
+  const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  const handleThemeChange = () => updateTheme();
+  mediaQuery.addEventListener('change', handleThemeChange);
+
+  // Listen for GitHub theme changes (using MutationObserver)
+  const observer = new window.MutationObserver(() => updateTheme());
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-color-mode', 'data-dark-theme', 'class'],
+  });
+
+  // Cleanup
+  onUnmounted(() => {
+    mediaQuery.removeEventListener('change', handleThemeChange);
+    observer.disconnect();
+  });
 });
 
 function handleBackdropClick(e: MouseEvent) {
@@ -245,137 +406,68 @@ defineExpose({
 
 .gitjump-popup {
   background: white;
-  padding: 30px;
   border-radius: 8px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   max-width: 600px;
+  width: 100%;
   max-height: 80vh;
-  overflow-y: auto;
-}
-
-.popup-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-  padding-bottom: 15px;
-  border-bottom: 2px solid #e1e4e8;
-}
-
-.gitjump-popup h2 {
-  margin: 0;
-  font-size: 24px;
-}
-
-.header-right {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
 }
 
-.sync-status {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 12px;
-  color: #586069;
+/* (1) Search bar */
+.search-bar {
+  padding: 16px 20px;
+  border-bottom: 1px solid #e1e4e8;
+  background: #fafbfc;
 }
 
-.rate-limit-compact {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
+.search-input {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 16px;
+  border: 1px solid #d1d5da;
+  border-radius: 6px;
+  outline: none;
+  font-family: inherit;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+
+.search-input:focus {
+  border-color: #0366d6;
+  box-shadow: 0 0 0 3px rgba(3, 102, 214, 0.1);
+}
+
+.search-input::placeholder {
   color: #6a737d;
 }
 
-.rate-limit-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  display: inline-block;
-  position: relative;
-}
-
-.rate-limit-dot.good {
-  background: #28a745;
-  box-shadow: 0 0 0 2px rgba(40, 167, 69, 0.2);
-}
-
-.rate-limit-dot.warning {
-  background: #dbab09;
-  box-shadow: 0 0 0 2px rgba(219, 171, 9, 0.2);
-  animation: pulse-warning 2s ease-in-out infinite;
-}
-
-.rate-limit-dot.limited {
-  background: #d73a49;
-  box-shadow: 0 0 0 2px rgba(215, 58, 73, 0.2);
-  animation: pulse-critical 1s ease-in-out infinite;
-}
-
-.rate-limit-label {
-  font-weight: 500;
-}
-
-@keyframes pulse-warning {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.6;
-  }
-}
-
-@keyframes pulse-critical {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.8;
-    transform: scale(1.1);
-  }
-}
-
-.sync-status .syncing {
-  color: #0366d6;
-  font-weight: 600;
-}
-
-.sync-button {
-  padding: 4px 10px;
-  font-size: 12px;
-  background: #f6f8fa;
-  border: 1px solid #d1d5da;
-  border-radius: 4px;
-  cursor: pointer;
-  font-weight: 600;
-  color: #24292e;
-  transition: background 0.2s;
-}
-
-.sync-button:hover {
-  background: #e1e4e8;
-}
-
+/* (2) Main content area */
 .status {
-  padding: 20px;
+  padding: 40px 20px;
   text-align: center;
   color: #586069;
+  font-size: 14px;
 }
 
 .status.error {
   color: #d73a49;
 }
 
+.status.empty-state {
+  color: #6a737d;
+}
+
 .repos-container {
   display: flex;
   flex-direction: column;
   gap: 0;
+  overflow-y: auto;
+  flex: 1;
 }
 
 .repos-list {
@@ -506,5 +598,180 @@ defineExpose({
 
 .count-item.prs {
   color: #1a7f37;
+}
+
+/* (3) Status bar at bottom */
+.status-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 20px;
+  border-top: 1px solid #e1e4e8;
+  background: #fafbfc;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.status-dot.synced {
+  background: #28a745;
+  box-shadow: 0 0 0 2px rgba(40, 167, 69, 0.2);
+}
+
+.status-dot.syncing {
+  background: #dbab09;
+  box-shadow: 0 0 0 2px rgba(219, 171, 9, 0.2);
+  animation: pulse-syncing 2s ease-in-out infinite;
+}
+
+.status-dot.error,
+.status-dot.not-synced {
+  background: #d73a49;
+  box-shadow: 0 0 0 2px rgba(215, 58, 73, 0.2);
+}
+
+.status-dot.loading {
+  background: #959da5;
+  box-shadow: 0 0 0 2px rgba(149, 157, 165, 0.2);
+}
+
+@keyframes pulse-syncing {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.status-text {
+  color: #586069;
+  font-weight: 500;
+}
+
+.rate-limit-warning {
+  font-size: 16px;
+  cursor: help;
+  animation: pulse-warning 2s ease-in-out infinite;
+}
+
+@keyframes pulse-warning {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.1);
+  }
+}
+
+/* Dark theme overrides */
+.gitjump-popup.dark-theme {
+  background: #0d1117;
+  color: #e6edf3;
+}
+
+.dark-theme .search-bar {
+  background: #161b22;
+  border-bottom-color: #30363d;
+}
+
+.dark-theme .search-input {
+  background: #0d1117;
+  border-color: #30363d;
+  color: #e6edf3;
+}
+
+.dark-theme .search-input::placeholder {
+  color: #7d8590;
+}
+
+.dark-theme .search-input:focus {
+  border-color: #58a6ff;
+  box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
+}
+
+.dark-theme .status {
+  color: #7d8590;
+}
+
+.dark-theme .status.error {
+  color: #f85149;
+}
+
+.dark-theme .status.empty-state {
+  color: #7d8590;
+}
+
+.dark-theme .stale-separator {
+  background: #161b22;
+  border-top-color: #30363d;
+  border-bottom-color: #30363d;
+  color: #7d8590;
+}
+
+.dark-theme .repo-item {
+  border-bottom-color: #21262d;
+}
+
+.dark-theme .repo-item:hover {
+  background: #161b22;
+}
+
+.dark-theme .repo-link {
+  color: #58a6ff;
+}
+
+.dark-theme .stale-repos .repo-link {
+  color: #7d8590;
+}
+
+.dark-theme .repo-desc {
+  color: #7d8590;
+}
+
+.dark-theme .count-item {
+  color: #7d8590;
+}
+
+.dark-theme .count-item.issues {
+  color: #58a6ff;
+}
+
+.dark-theme .count-item.prs {
+  color: #3fb950;
+}
+
+.dark-theme .status-bar {
+  background: #161b22;
+  border-top-color: #30363d;
+}
+
+.dark-theme .status-text {
+  color: #7d8590;
+}
+
+.dark-theme .repo-type-icon.fork {
+  color: #7d8590;
+}
+
+.dark-theme .repo-type-icon.owner {
+  color: #58a6ff;
 }
 </style>
