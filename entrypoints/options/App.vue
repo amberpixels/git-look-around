@@ -40,20 +40,66 @@
         <button class="btn-secondary" @click="logout">Logout</button>
       </div>
     </div>
+
+    <div v-if="isAuthenticated" class="section">
+      <h2>Sync Preferences</h2>
+      <p class="instructions">
+        Choose what data to sync from GitHub (repositories are always synced).
+      </p>
+
+      <div class="preferences">
+        <label class="checkbox-label">
+          <input
+            v-model="preferences.syncIssues"
+            type="checkbox"
+            class="checkbox"
+            @change="savePreferences"
+          />
+          <span>Sync Issues</span>
+        </label>
+
+        <label class="checkbox-label">
+          <input
+            v-model="preferences.syncPullRequests"
+            type="checkbox"
+            class="checkbox"
+            @change="savePreferences"
+          />
+          <span>Sync Pull Requests</span>
+        </label>
+      </div>
+
+      <p v-if="preferencesSaved" class="success small">✓ Preferences saved</p>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { saveGitHubToken, getGitHubToken, removeGitHubToken } from '@/src/storage/chrome';
+import {
+  saveGitHubToken,
+  getGitHubToken,
+  removeGitHubToken,
+  getSyncPreferences,
+  saveSyncPreferences,
+  type SyncPreferences,
+} from '@/src/storage/chrome';
 
 const tokenInput = ref('');
 const isAuthenticated = ref(false);
 const error = ref('');
+const preferences = ref<SyncPreferences>({
+  syncIssues: true,
+  syncPullRequests: true,
+});
+const preferencesSaved = ref(false);
 
 onMounted(async () => {
   const token = await getGitHubToken();
   isAuthenticated.value = !!token;
+
+  // Load preferences
+  preferences.value = await getSyncPreferences();
 });
 
 async function saveToken() {
@@ -76,6 +122,16 @@ async function saveToken() {
 async function logout() {
   await removeGitHubToken();
   isAuthenticated.value = false;
+}
+
+async function savePreferences() {
+  await saveSyncPreferences(preferences.value);
+  preferencesSaved.value = true;
+
+  // Hide success message after 2 seconds
+  window.setTimeout(() => {
+    preferencesSaved.value = false;
+  }, 2000);
 }
 </script>
 
@@ -198,5 +254,38 @@ h2 {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+}
+
+.preferences {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 15px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 16px;
+  user-select: none;
+}
+
+.checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: #0366d6;
+}
+
+.checkbox-label:hover {
+  color: #0366d6;
+}
+
+.success.small {
+  font-size: 14px;
+  margin-top: 10px;
+  margin-bottom: 0;
 }
 </style>

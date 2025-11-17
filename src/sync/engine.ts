@@ -10,6 +10,7 @@ import {
   getAuthenticatedUser,
 } from '@/src/api/github';
 import { saveRepos, saveIssues, savePullRequests, getMeta, setMeta } from '@/src/storage/db';
+import { getSyncPreferences } from '@/src/storage/chrome';
 import type { RepoRecord, IssueRecord, PullRequestRecord } from '@/src/types';
 
 // Repos with last update older than 6 months are considered stale
@@ -138,10 +139,14 @@ export async function runSync(): Promise<void> {
   console.warn('[Sync] Starting sync...');
 
   try {
-    // Step 0: Get authenticated user info
+    // Step 0: Get sync preferences and user info
+    const preferences = await getSyncPreferences();
     const user = await getAuthenticatedUser();
     const accountLogin = user.login || null;
     console.warn(`[Sync] Syncing account: ${accountLogin}`);
+    console.warn(
+      `[Sync] Preferences: Issues=${preferences.syncIssues}, PRs=${preferences.syncPullRequests}`,
+    );
 
     // Mark sync as running
     await updateSyncStatus({
@@ -193,8 +198,19 @@ export async function runSync(): Promise<void> {
       },
     });
 
-    // Step 2: Fetch issues and PRs for active repos only
-    console.warn(`[Sync] Syncing issues and PRs for ${activeRepos.length} active repos...`);
+    // Step 2: Fetch issues and PRs for active repos only (based on preferences)
+    const syncTargets = [];
+    if (preferences.syncIssues) syncTargets.push('issues');
+    if (preferences.syncPullRequests) syncTargets.push('PRs');
+
+    if (syncTargets.length > 0) {
+      console.warn(
+        `[Sync] Syncing ${syncTargets.join(' and ')} for ${activeRepos.length} active repos...`,
+      );
+    } else {
+      console.warn('[Sync] Skipping issues and PRs (disabled in preferences)');
+    }
+
     let issuesCount = 0;
     let prsCount = 0;
 
@@ -218,70 +234,87 @@ export async function runSync(): Promise<void> {
           `[Sync] [${Math.max(issuesCount, prsCount) + 1}/${activeRepos.length}] Processing ${repo.full_name}...`,
         );
 
-        // Fetch issues and PRs in parallel with individual error handling
-        const [issuesPromise, prsPromise] = [
-          getRepoIssues(owner, repoName, 'all')
-            .then((issues) => {
-              const issueRecords: IssueRecord[] = issues.map((issue) => ({
-                ...issue,
-                repo_id: repo.id,
-                lastFetchedAt: Date.now(),
-              }));
-              return saveIssues(issueRecords).then(() => {
-                issuesCount++;
-                console.warn(`[Sync] ✓ ${repo.full_name}: ${issues.length} issues`);
-                // Update progress after issues saved
-                updateSyncStatus({
-                  progress: {
-                    totalRepos: allRepos.length,
-                    activeRepos: activeRepos.length,
-                    staleRepos: staleRepos.length,
-                    issuesProgress: issuesCount,
-                    prsProgress: prsCount,
-                    currentRepo: repo.full_name,
-                  },
-                });
-                return issues.length;
-              });
-            })
-            .catch((err) => {
-              console.error(`[Sync] ✗ Failed to fetch issues for ${repo.full_name}:`, err);
-              issuesCount++; // Still increment to keep progress moving
-              return 0;
-            }),
-          getRepoPullRequests(owner, repoName)
-            .then((prs) => {
-              const prRecords: PullRequestRecord[] = prs.map((pr) => ({
-                ...pr,
-                repo_id: repo.id,
-                lastFetchedAt: Date.now(),
-              }));
-              return savePullRequests(prRecords).then(() => {
-                prsCount++;
-                console.warn(`[Sync] ✓ ${repo.full_name}: ${prs.length} PRs`);
-                // Update progress after PRs saved
-                updateSyncStatus({
-                  progress: {
-                    totalRepos: allRepos.length,
-                    activeRepos: activeRepos.length,
-                    staleRepos: staleRepos.length,
-                    issuesProgress: issuesCount,
-                    prsProgress: prsCount,
-                    currentRepo: repo.full_name,
-                  },
-                });
-                return prs.length;
-              });
-            })
-            .catch((err) => {
-              console.error(`[Sync] ✗ Failed to fetch PRs for ${repo.full_name}:`, err);
-              prsCount++; // Still increment to keep progress moving
-              return 0;
-            }),
-        ];
+        // Build promises array based on preferences
+        const promises: Promise<number>[] = [];
 
-        // Wait for both to complete (they won't throw since we catch errors individually)
-        await Promise.all([issuesPromise, prsPromise]);
+        // Fetch issues if enabled
+        if (preferences.syncIssues) {
+          promises.push(
+            getRepoIssues(owner, repoName, 'all')
+              .then((issues) => {
+                const issueRecords: IssueRecord[] = issues.map((issue) => ({
+                  ...issue,
+                  repo_id: repo.id,
+                  lastFetchedAt: Date.now(),
+                }));
+                return saveIssues(issueRecords).then(() => {
+                  issuesCount++;
+                  console.warn(`[Sync] ✓ ${repo.full_name}: ${issues.length} issues`);
+                  // Update progress after issues saved
+                  updateSyncStatus({
+                    progress: {
+                      totalRepos: allRepos.length,
+                      activeRepos: activeRepos.length,
+                      staleRepos: staleRepos.length,
+                      issuesProgress: issuesCount,
+                      prsProgress: prsCount,
+                      currentRepo: repo.full_name,
+                    },
+                  });
+                  return issues.length;
+                });
+              })
+              .catch((err) => {
+                console.error(`[Sync] ✗ Failed to fetch issues for ${repo.full_name}:`, err);
+                issuesCount++; // Still increment to keep progress moving
+                return 0;
+              }),
+          );
+        } else {
+          // If not syncing issues, increment count to match activeRepos
+          issuesCount++;
+        }
+
+        // Fetch PRs if enabled
+        if (preferences.syncPullRequests) {
+          promises.push(
+            getRepoPullRequests(owner, repoName)
+              .then((prs) => {
+                const prRecords: PullRequestRecord[] = prs.map((pr) => ({
+                  ...pr,
+                  repo_id: repo.id,
+                  lastFetchedAt: Date.now(),
+                }));
+                return savePullRequests(prRecords).then(() => {
+                  prsCount++;
+                  console.warn(`[Sync] ✓ ${repo.full_name}: ${prs.length} PRs`);
+                  // Update progress after PRs saved
+                  updateSyncStatus({
+                    progress: {
+                      totalRepos: allRepos.length,
+                      activeRepos: activeRepos.length,
+                      staleRepos: staleRepos.length,
+                      issuesProgress: issuesCount,
+                      prsProgress: prsCount,
+                      currentRepo: repo.full_name,
+                    },
+                  });
+                  return prs.length;
+                });
+              })
+              .catch((err) => {
+                console.error(`[Sync] ✗ Failed to fetch PRs for ${repo.full_name}:`, err);
+                prsCount++; // Still increment to keep progress moving
+                return 0;
+              }),
+          );
+        } else {
+          // If not syncing PRs, increment count to match activeRepos
+          prsCount++;
+        }
+
+        // Wait for all enabled fetches to complete (they won't throw since we catch errors individually)
+        await Promise.all(promises);
       } catch (err) {
         // This should rarely be reached now, but keep as safety net
         console.error(`[Sync] ✗ Unexpected error for ${repo.full_name}:`, err);
