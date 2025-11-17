@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted } from 'vue';
 import { validateToken, getLastRateLimit } from '@/shared/github-api';
 import { getSyncStatus } from '@/shared/sync-engine';
 import type { RateLimitInfo } from '@/shared/github-api';
+import type { SyncStatus } from '@/shared/sync-engine';
 
 const isAuthenticated = ref<boolean | null>(null);
 const loading = ref(true);
@@ -19,14 +20,14 @@ onMounted(async () => {
     updateSyncStatusText(status);
 
     // Poll for updates every 5 seconds while popup is open
-    const interval = setInterval(async () => {
+    const interval = window.setInterval(async () => {
       const updatedStatus = await getSyncStatus();
       updateSyncStatusText(updatedStatus);
       rateLimit.value = await getLastRateLimit();
     }, 5000);
 
     // Cleanup on unmount
-    onUnmounted(() => clearInterval(interval));
+    onUnmounted(() => window.clearInterval(interval));
   } catch {
     isAuthenticated.value = false;
   } finally {
@@ -34,7 +35,7 @@ onMounted(async () => {
   }
 });
 
-function updateSyncStatusText(status: any) {
+function updateSyncStatusText(status: SyncStatus) {
   if (status.isRunning) {
     const { activeRepos, issuesProgress, prsProgress } = status.progress;
     if (activeRepos > 0) {

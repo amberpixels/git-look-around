@@ -301,5 +301,5 @@ export interface VisitRecord {
  */
 export interface MetaRecord {
   key: string; // Primary key (e.g., "last_full_sync", "schema_version")
-  value: any;
+  value: unknown;
 }

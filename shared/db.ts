@@ -272,11 +272,11 @@ export async function recordVisit(type: 'repo' | 'issue' | 'pr', entityId: numbe
 
 // ==================== Meta helpers ====================
 
-export async function getMeta(key: string): Promise<any> {
+export async function getMeta(key: string): Promise<unknown> {
   const record = await getFromStore<MetaRecord>(STORES.META, key);
   return record?.value;
 }
 
-export async function setMeta(key: string, value: any): Promise<void> {
+export async function setMeta(key: string, value: unknown): Promise<void> {
   return putInStore(STORES.META, { key, value });
 }

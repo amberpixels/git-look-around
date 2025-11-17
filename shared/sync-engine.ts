@@ -82,7 +82,7 @@ export async function shouldRunSync(): Promise<boolean> {
         lastError: 'Sync timeout - automatically reset',
       });
     } else {
-      console.log('[Sync] Already running, skipping...');
+      console.warn('[Sync] Already running, skipping...');
       return false;
     }
   } else if (status.isRunning) {
@@ -98,7 +98,9 @@ export async function shouldRunSync(): Promise<boolean> {
   if (status.lastCompletedAt) {
     const timeSinceLastSync = Date.now() - status.lastCompletedAt;
     if (timeSinceLastSync < MIN_SYNC_INTERVAL_MS) {
-      console.log(`[Sync] Last sync was ${Math.round(timeSinceLastSync / 1000)}s ago, skipping...`);
+      console.warn(
+        `[Sync] Last sync was ${Math.round(timeSinceLastSync / 1000)}s ago, skipping...`,
+      );
       return false;
     }
   }
@@ -125,7 +127,7 @@ export async function runSync(): Promise<void> {
     return;
   }
 
-  console.log('[Sync] Starting sync...');
+  console.warn('[Sync] Starting sync...');
 
   // Mark sync as running
   await updateSyncStatus({
@@ -144,9 +146,9 @@ export async function runSync(): Promise<void> {
 
   try {
     // Step 1: Fetch all repos and count them
-    console.log('[Sync] Fetching repositories...');
+    console.warn('[Sync] Fetching repositories...');
     const allRepos = await getUserRepos();
-    console.log(`[Sync] Found ${allRepos.length} total repositories`);
+    console.warn(`[Sync] Found ${allRepos.length} total repositories`);
 
     // Save all repos immediately (so UI can show them)
     const repoRecords: RepoRecord[] = allRepos.map((repo) => ({
@@ -154,13 +156,13 @@ export async function runSync(): Promise<void> {
       lastFetchedAt: Date.now(),
     }));
     await saveRepos(repoRecords);
-    console.log(`[Sync] ✓ Saved ${allRepos.length} repos to DB`);
+    console.warn(`[Sync] ✓ Saved ${allRepos.length} repos to DB`);
 
     // Separate active and stale repos
     const activeRepos = allRepos.filter((repo) => !isRepoStale(repo));
     const staleRepos = allRepos.filter((repo) => isRepoStale(repo));
 
-    console.log(
+    console.warn(
       `[Sync] Active repos: ${activeRepos.length}, Stale repos: ${staleRepos.length} (skipping)`,
     );
 
@@ -177,7 +179,7 @@ export async function runSync(): Promise<void> {
     });
 
     // Step 2: Fetch issues and PRs for active repos only
-    console.log(`[Sync] Syncing issues and PRs for ${activeRepos.length} active repos...`);
+    console.warn(`[Sync] Syncing issues and PRs for ${activeRepos.length} active repos...`);
     let issuesCount = 0;
     let prsCount = 0;
 
@@ -197,7 +199,7 @@ export async function runSync(): Promise<void> {
           },
         });
 
-        console.log(
+        console.warn(
           `[Sync] [${Math.max(issuesCount, prsCount) + 1}/${activeRepos.length}] Processing ${repo.full_name}...`,
         );
 
@@ -212,7 +214,7 @@ export async function runSync(): Promise<void> {
               }));
               return saveIssues(issueRecords).then(() => {
                 issuesCount++;
-                console.log(`[Sync] ✓ ${repo.full_name}: ${issues.length} issues`);
+                console.warn(`[Sync] ✓ ${repo.full_name}: ${issues.length} issues`);
                 // Update progress after issues saved
                 updateSyncStatus({
                   progress: {
@@ -241,7 +243,7 @@ export async function runSync(): Promise<void> {
               }));
               return savePullRequests(prRecords).then(() => {
                 prsCount++;
-                console.log(`[Sync] ✓ ${repo.full_name}: ${prs.length} PRs`);
+                console.warn(`[Sync] ✓ ${repo.full_name}: ${prs.length} PRs`);
                 // Update progress after PRs saved
                 updateSyncStatus({
                   progress: {
@@ -289,7 +291,7 @@ export async function runSync(): Promise<void> {
       },
     });
 
-    console.log(
+    console.warn(
       `[Sync] ✓ Sync completed: ${activeRepos.length} active repos, ${staleRepos.length} stale (skipped)`,
     );
   } catch (error) {
@@ -310,7 +312,7 @@ export async function runSync(): Promise<void> {
  * Force a sync even if one recently completed
  */
 export async function forceSync(): Promise<void> {
-  console.log('[Sync] Force sync requested');
+  console.warn('[Sync] Force sync requested');
 
   // Reset the sync state completely to allow immediate sync
   await updateSyncStatus({
@@ -326,7 +328,7 @@ export async function forceSync(): Promise<void> {
  * Reset stuck sync (for manual recovery)
  */
 export async function resetSync(): Promise<void> {
-  console.log('[Sync] Manual sync reset requested');
+  console.warn('[Sync] Manual sync reset requested');
 
   await updateSyncStatus({
     isRunning: false,

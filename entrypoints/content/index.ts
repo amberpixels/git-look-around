@@ -7,7 +7,7 @@ import { runSync, forceSync, resetSync, getSyncStatus } from '@/shared/sync-engi
 export default defineContentScript({
   matches: ['*://github.com/*', '*://*.github.com/*'],
   main(_ctx) {
-    console.log('[Gitjump] Content script loaded on GitHub');
+    console.warn('[Gitjump] Content script loaded on GitHub');
 
     // Create container for Vue app
     const container = document.createElement('div');
@@ -30,27 +30,27 @@ export default defineContentScript({
 
     // Listen for custom events from console
     document.addEventListener('gitjump:forceSync', () => {
-      console.log('[Gitjump] Force sync triggered from console');
+      console.warn('[Gitjump] Force sync triggered from console');
       forceSync().catch((err) => console.error('[Gitjump] Force sync failed:', err));
     });
 
     document.addEventListener('gitjump:resetSync', () => {
-      console.log('[Gitjump] Reset sync triggered from console');
+      console.warn('[Gitjump] Reset sync triggered from console');
       resetSync().catch((err) => console.error('[Gitjump] Reset sync failed:', err));
     });
 
     document.addEventListener('gitjump:getSyncStatus', async () => {
       const status = await getSyncStatus();
-      console.log('[Gitjump] Sync Status:', status);
+      console.warn('[Gitjump] Sync Status:', status);
       document.dispatchEvent(new CustomEvent('gitjump:syncStatusResponse', { detail: status }));
     });
 
     document.addEventListener('gitjump:runSync', () => {
-      console.log('[Gitjump] Manual sync triggered from console');
+      console.warn('[Gitjump] Manual sync triggered from console');
       runSync().catch((err) => console.error('[Gitjump] Manual sync failed:', err));
     });
 
-    console.log(
+    console.warn(
       `
 ╔═══════════════════════════════════════════════════════════════╗
 ║          Gitjump Debug Commands (Copy & Paste):               ║
