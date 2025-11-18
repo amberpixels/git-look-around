@@ -6,8 +6,6 @@ import { useBackgroundMessage } from './useBackgroundMessage';
 import { MessageType } from '@/src/messages/types';
 import type { RepoRecord, IssueRecord, PullRequestRecord } from '@/src/types';
 
-// No longer needed - indexed status is now stored in the repo record itself
-
 export function useRepos() {
   const { sendMessage } = useBackgroundMessage();
 
@@ -59,16 +57,16 @@ export function useRepos() {
   }
 
   /**
-   * Split repos into indexed and non-indexed
+   * Sort repos once, then split into indexed and non-indexed
    */
+  const sortedRepos = computed(() => sortReposByVisitPriority(repos.value));
+
   const indexedRepos = computed(() => {
-    const sorted = sortReposByVisitPriority(repos.value);
-    return sorted.filter((repo) => repo.indexed !== false); // true or undefined = indexed
+    return sortedRepos.value.filter((repo) => repo.indexed !== false); // true or undefined = indexed
   });
 
   const nonIndexedRepos = computed(() => {
-    const sorted = sortReposByVisitPriority(repos.value);
-    return sorted.filter((repo) => repo.indexed === false); // explicitly false = not indexed
+    return sortedRepos.value.filter((repo) => repo.indexed === false); // explicitly false = not indexed
   });
 
   /**
@@ -87,14 +85,18 @@ export function useRepos() {
   }
 
   /**
-   * Load issue and PR counts for each repo
+   * Load issue and PR counts for indexed repos only
+   * Non-indexed repos don't need counts since they don't show PRs/issues
    */
   async function fetchCounts() {
     const counts: Record<number, { issues: number; prs: number }> = {};
     const searchIndex: Record<number, { issues: string[]; prs: string[] }> = {};
 
+    // Only fetch counts for indexed repos to avoid unnecessary API calls
+    const reposToFetch = repos.value.filter((repo) => repo.indexed !== false);
+
     await Promise.all(
-      repos.value.map(async (repo) => {
+      reposToFetch.map(async (repo) => {
         try {
           const [issues, prs] = await Promise.all([
             sendMessage<IssueRecord[]>(MessageType.GET_ISSUES_BY_REPO, repo.id),
