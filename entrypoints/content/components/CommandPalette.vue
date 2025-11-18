@@ -304,22 +304,18 @@ function applyQuickSwitcherLogic(reposList: RepoRecord[]): RepoRecord[] {
 }
 
 /**
- * Filter repos by search query (simple substring match)
+ * Check if repo name or description matches the query (direct match)
  */
-function filterRepos(reposList: RepoRecord[]): RepoRecord[] {
-  const query = normalizedSearchQuery.value;
-  if (!query) {
-    return reposList;
-  }
-
-  return reposList.filter(
-    (repo) =>
-      repo.full_name.toLowerCase().includes(query) ||
-      (repo.description?.toLowerCase().includes(query) ?? false) ||
-      matchesDetailSearch(repo, query),
+function matchesRepoDirectly(repo: RepoRecord, query: string): boolean {
+  return (
+    repo.full_name.toLowerCase().includes(query) ||
+    (repo.description?.toLowerCase().includes(query) ?? false)
   );
 }
 
+/**
+ * Check if only PRs/issues match the query (indirect match)
+ */
 function matchesDetailSearch(repo: RepoRecord, query?: string): boolean {
   const actualQuery = query ?? normalizedSearchQuery.value;
   if (!actualQuery) return false;
@@ -342,6 +338,34 @@ function matchesDetailSearch(repo: RepoRecord, query?: string): boolean {
   }
 
   return false;
+}
+
+/**
+ * Filter and sort repos by search query with two-tier ranking:
+ * 1. Direct matches (repo name/description) - sorted by visit priority
+ * 2. Indirect matches (only PRs/issues) - sorted by visit priority
+ */
+function filterRepos(reposList: RepoRecord[]): RepoRecord[] {
+  const query = normalizedSearchQuery.value;
+  if (!query) {
+    return reposList;
+  }
+
+  // Split into direct and indirect matches
+  const directMatches: RepoRecord[] = [];
+  const indirectMatches: RepoRecord[] = [];
+
+  for (const repo of reposList) {
+    if (matchesRepoDirectly(repo, query)) {
+      directMatches.push(repo);
+    } else if (matchesDetailSearch(repo, query)) {
+      indirectMatches.push(repo);
+    }
+  }
+
+  // Return direct matches first, then indirect matches
+  // Both groups maintain their original visit/recency sorting from reposList
+  return [...directMatches, ...indirectMatches];
 }
 
 // Filtered repo lists with quick-switcher logic applied
@@ -390,7 +414,9 @@ function getRepoDetailsError(repoId: number): string | null {
 function shouldShowRepoDetails(repo: RepoRecord): boolean {
   if (isRepoExpanded(repo)) return true;
   if (repo.indexed === false) return false;
-  return matchesDetailSearch(repo);
+  // In FILTERED mode, auto-show details if PRs/issues match
+  const query = normalizedSearchQuery.value;
+  return query ? matchesDetailSearch(repo, query) : false;
 }
 
 function setRepoItemRef(repoId: number, el: unknown) {
@@ -517,10 +543,11 @@ async function ensureRepoDetails(repo: RepoRecord) {
     return;
   }
 
-  repoDetailLoading.value = { ...repoDetailLoading.value, [repoId]: true };
-  repoDetailError.value = { ...repoDetailError.value, [repoId]: null };
-
+  // Create promise immediately to prevent race condition
   const loadPromise = (async () => {
+    repoDetailLoading.value = { ...repoDetailLoading.value, [repoId]: true };
+    repoDetailError.value = { ...repoDetailError.value, [repoId]: null };
+
     try {
       const [issues, prs] = await Promise.all([
         sendMessage<IssueRecord[]>(MessageType.GET_ISSUES_BY_REPO, repoId),
@@ -541,12 +568,12 @@ async function ensureRepoDetails(repo: RepoRecord) {
       };
     } finally {
       repoDetailLoading.value = { ...repoDetailLoading.value, [repoId]: false };
+      detailLoadPromises[repoId] = null;
     }
   })();
 
   detailLoadPromises[repoId] = loadPromise;
   await loadPromise;
-  detailLoadPromises[repoId] = null;
 }
 
 async function expandFocusedRepo() {
@@ -603,7 +630,9 @@ watch(allVisibleRepos, () => {
 
 watch(normalizedSearchQuery, (query) => {
   if (!query) return;
-  indexedRepos.value.forEach((repo) => {
+  // Only preload details for visible filtered repos (not all indexed repos)
+  const visibleRepos = [...filteredIndexedRepos.value, ...filteredNonIndexedRepos.value];
+  visibleRepos.forEach((repo) => {
     if (
       matchesDetailSearch(repo, query) &&
       !repoDetailData.value[repo.id] &&
@@ -864,7 +893,6 @@ function detectDarkTheme(): boolean {
  */
 function updateTheme() {
   isDarkTheme.value = detectDarkTheme();
-  console.warn('[CommandPalette] Theme detected:', isDarkTheme.value ? 'dark' : 'light');
 }
 
 // Auto-load data when component mounts (content script loads)
@@ -904,7 +932,9 @@ function handleBackdropClick(e: MouseEvent) {
 function handleKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape' && isVisible.value) {
     if (normalizedSearchQuery.value) {
+      // Clear search and reset focus to first repo
       searchQuery.value = '';
+      focusedIndex.value = 0;
       detailFocusIndex.value = 0;
       focusMode.value = 'repos';
     } else {
