@@ -24,6 +24,7 @@
           <li
             v-for="repo in filteredIndexedRepos"
             :key="repo.id"
+            :ref="(el) => setRepoItemRef(repo.id, el)"
             class="repo-item"
             :class="{ focused: isRepoFocused(repo) }"
             :title="repo.description || ''"
@@ -65,15 +66,56 @@
                   </svg>
                   {{ repoCounts[repo.id].issues }}
                 </span>
-                <span v-if="preferences.syncPullRequests" class="count-item prs">
+                <a
+                  v-if="preferences.syncPullRequests"
+                  class="count-item prs count-item-link"
+                  :href="getPullRequestsUrl(repo)"
+                  @click="handleRepoClick"
+                >
                   <svg class="icon" viewBox="0 0 16 16" width="14" height="14">
                     <path
                       d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"
                     ></path>
                   </svg>
                   {{ repoCounts[repo.id].prs }}
-                </span>
+                </a>
               </div>
+            </div>
+            <div v-if="shouldShowRepoDetails(repo)" class="repo-details">
+              <div v-if="isRepoDetailsLoading(repo.id)" class="repo-details-status">
+                Loading issues and PRs...
+              </div>
+              <div v-else-if="getRepoDetailsError(repo.id)" class="repo-details-status error">
+                {{ getRepoDetailsError(repo.id) }}
+              </div>
+              <div
+                v-else-if="getVisibleRepoDetailItems(repo).length === 0"
+                class="repo-details-status"
+              >
+                No synced issues or pull requests for this repo.
+              </div>
+              <ul v-else class="repo-details-list">
+                <li
+                  v-for="(item, index) in getVisibleRepoDetailItems(repo)"
+                  :key="`${item.type}-${item.id}`"
+                  :ref="(el) => setDetailRowRef(repo.id, item, el)"
+                  class="repo-details-row"
+                  :class="{
+                    focused: isDetailFocused(repo.id, index),
+                    pr: item.type === 'pr',
+                    issue: item.type === 'issue',
+                    open: item.state === 'open',
+                    closed: item.state === 'closed',
+                  }"
+                >
+                  <span class="repo-details-type" :class="[item.type, item.state]">
+                    {{ item.type === 'pr' ? 'PR' : 'Issue' }} #{{ item.number }}
+                  </span>
+                  <a :href="item.html_url" class="repo-details-link" @click="handleRepoClick">
+                    {{ item.title }}
+                  </a>
+                </li>
+              </ul>
             </div>
           </li>
         </ul>
@@ -85,6 +127,7 @@
             <li
               v-for="repo in filteredNonIndexedRepos"
               :key="repo.id"
+              :ref="(el) => setRepoItemRef(repo.id, el)"
               class="repo-item"
               :class="{ focused: isRepoFocused(repo) }"
               :title="repo.description || ''"
@@ -162,12 +205,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, onUnmounted } from 'vue';
+import { ref, computed, onMounted, nextTick, onUnmounted, watch } from 'vue';
 import { useRepos } from '@/src/composables/useRepos';
 import { useSyncStatus } from '@/src/composables/useSyncStatus';
 import { useRateLimit } from '@/src/composables/useRateLimit';
 import { useSyncPreferences } from '@/src/composables/useSyncPreferences';
-import type { RepoRecord } from '@/src/types';
+import { useBackgroundMessage } from '@/src/composables/useBackgroundMessage';
+import { MessageType } from '@/src/messages/types';
+import type { RepoRecord, IssueRecord, PullRequestRecord } from '@/src/types';
 
 const isVisible = ref(false);
 const searchQuery = ref('');
@@ -175,6 +220,35 @@ const searchQuery = ref('');
 const searchInputRef = ref<any>(null);
 const isDarkTheme = ref(false);
 const focusedIndex = ref(0); // Index of currently focused repo
+const focusMode = ref<'repos' | 'details'>('repos');
+const detailFocusIndex = ref(0);
+const expandedRepoId = ref<number | null>(null);
+const normalizedSearchQuery = computed(() => searchQuery.value.trim().toLowerCase());
+
+type RepoDetailData = {
+  issues: IssueRecord[];
+  prs: PullRequestRecord[];
+};
+
+type RepoDetailItem = {
+  type: 'issue' | 'pr';
+  id: number;
+  title: string;
+  number: number;
+  state: 'open' | 'closed';
+  html_url: string;
+  last_visited_at?: number | null;
+  updated_at_ts?: number | null;
+};
+
+const repoDetailData = ref<Record<number, RepoDetailData>>({});
+const repoDetailLoading = ref<Record<number, boolean>>({});
+const repoDetailError = ref<Record<number, string | null>>({});
+const detailLoadPromises: Record<number, Promise<void> | null> = {};
+const repoItemRefs = new Map<number, HTMLElement | null>();
+const detailRowRefs = new Map<string, HTMLElement | null>();
+
+const { sendMessage } = useBackgroundMessage();
 
 // Use composables
 const {
@@ -182,6 +256,7 @@ const {
   indexedRepos,
   nonIndexedRepos,
   repoCounts,
+  repoSearchIndex,
   error: reposError,
   loadAll: loadReposData,
   addRepoToIndex,
@@ -232,16 +307,41 @@ function applyQuickSwitcherLogic(reposList: RepoRecord[]): RepoRecord[] {
  * Filter repos by search query (simple substring match)
  */
 function filterRepos(reposList: RepoRecord[]): RepoRecord[] {
-  if (!searchQuery.value.trim()) {
+  const query = normalizedSearchQuery.value;
+  if (!query) {
     return reposList;
   }
 
-  const query = searchQuery.value.toLowerCase();
   return reposList.filter(
     (repo) =>
       repo.full_name.toLowerCase().includes(query) ||
-      (repo.description?.toLowerCase().includes(query) ?? false),
+      (repo.description?.toLowerCase().includes(query) ?? false) ||
+      matchesDetailSearch(repo, query),
   );
+}
+
+function matchesDetailSearch(repo: RepoRecord, query?: string): boolean {
+  const actualQuery = query ?? normalizedSearchQuery.value;
+  if (!actualQuery) return false;
+
+  const searchEntry = repoSearchIndex.value[repo.id];
+  if (!searchEntry) return false;
+
+  if (
+    preferences.value.syncPullRequests &&
+    searchEntry.prs.some((title) => title.includes(actualQuery))
+  ) {
+    return true;
+  }
+
+  if (
+    preferences.value.syncIssues &&
+    searchEntry.issues.some((title) => title.includes(actualQuery))
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 // Filtered repo lists with quick-switcher logic applied
@@ -260,6 +360,12 @@ const allVisibleRepos = computed(() => [
   ...filteredNonIndexedRepos.value,
 ]);
 
+const expandedDetailItems = computed(() => {
+  if (!expandedRepoId.value) return [];
+  const filterQuery = normalizedSearchQuery.value || undefined;
+  return getRepoDetailItems(expandedRepoId.value, filterQuery);
+});
+
 /**
  * Check if a repo is focused
  */
@@ -269,10 +375,271 @@ function isRepoFocused(repo: RepoRecord): boolean {
   return index === focusedIndex.value;
 }
 
+function isRepoExpanded(repo: RepoRecord): boolean {
+  return expandedRepoId.value === repo.id;
+}
+
+function isRepoDetailsLoading(repoId: number): boolean {
+  return repoDetailLoading.value[repoId] ?? false;
+}
+
+function getRepoDetailsError(repoId: number): string | null {
+  return repoDetailError.value[repoId] ?? null;
+}
+
+function shouldShowRepoDetails(repo: RepoRecord): boolean {
+  if (isRepoExpanded(repo)) return true;
+  if (repo.indexed === false) return false;
+  return matchesDetailSearch(repo);
+}
+
+function setRepoItemRef(repoId: number, el: unknown) {
+  if (el instanceof HTMLElement) {
+    repoItemRefs.set(repoId, el);
+  } else {
+    repoItemRefs.delete(repoId);
+  }
+}
+
+function getDetailRowKey(repoId: number, item: RepoDetailItem): string {
+  return `${repoId}-${item.type}-${item.id}`;
+}
+
+function setDetailRowRef(repoId: number, item: RepoDetailItem, el: unknown) {
+  const key = getDetailRowKey(repoId, item);
+  if (el instanceof HTMLElement) {
+    detailRowRefs.set(key, el);
+  } else {
+    detailRowRefs.delete(key);
+  }
+}
+
+function toRepoDetailItem(
+  record: IssueRecord | PullRequestRecord,
+  type: 'issue' | 'pr',
+): RepoDetailItem {
+  return {
+    type,
+    id: record.id,
+    title: record.title,
+    number: record.number,
+    state: record.state,
+    html_url: record.html_url,
+    last_visited_at: record.last_visited_at ?? null,
+    updated_at_ts: record.updated_at ? new Date(record.updated_at).getTime() : null,
+  };
+}
+
+function sortDetailItems(items: RepoDetailItem[]): RepoDetailItem[] {
+  return [...items].sort((a, b) => {
+    if (a.state !== b.state) {
+      return a.state === 'open' ? -1 : 1;
+    }
+
+    const visitedA = a.last_visited_at ?? 0;
+    const visitedB = b.last_visited_at ?? 0;
+    if (visitedA && visitedB && visitedA !== visitedB) {
+      return visitedB - visitedA;
+    }
+    if (visitedA && !visitedB) return -1;
+    if (!visitedA && visitedB) return 1;
+
+    const updatedA = a.updated_at_ts ?? 0;
+    const updatedB = b.updated_at_ts ?? 0;
+    return updatedB - updatedA;
+  });
+}
+
+function getRepoDetailItems(repoId: number, filterQuery?: string): RepoDetailItem[] {
+  const data = repoDetailData.value[repoId];
+  if (!data) return [];
+
+  const items: RepoDetailItem[] = [];
+
+  if (preferences.value.syncPullRequests) {
+    items.push(...data.prs.map((pr) => toRepoDetailItem(pr, 'pr')));
+  }
+
+  if (preferences.value.syncIssues) {
+    items.push(...data.issues.map((issue) => toRepoDetailItem(issue, 'issue')));
+  }
+
+  let sorted = sortDetailItems(items);
+  if (filterQuery) {
+    const query = filterQuery.toLowerCase();
+    sorted = sorted.filter((item) => item.title.toLowerCase().includes(query));
+  }
+  return sorted;
+}
+
+function getVisibleRepoDetailItems(repo: RepoRecord): RepoDetailItem[] {
+  // In FILTERED mode (search active), always show filtered items even when manually expanded
+  // In NORMAL mode (no search), show all items
+  const filterQuery = normalizedSearchQuery.value;
+  return getRepoDetailItems(repo.id, filterQuery || undefined);
+}
+
+function ensureRepoFocusVisible() {
+  if (focusMode.value !== 'repos') return;
+  const repo = allVisibleRepos.value[focusedIndex.value];
+  if (!repo) return;
+  const el = repoItemRefs.get(repo.id);
+  el?.scrollIntoView({ block: 'nearest' });
+}
+
+function ensureDetailFocusVisible() {
+  if (focusMode.value !== 'details' || !expandedRepoId.value) return;
+  const items = expandedDetailItems.value;
+  const item = items[detailFocusIndex.value];
+  if (!item) return;
+  const key = getDetailRowKey(expandedRepoId.value, item);
+  const el = detailRowRefs.get(key);
+  el?.scrollIntoView({ block: 'nearest' });
+}
+
+function isDetailFocused(repoId: number, index: number): boolean {
+  return (
+    focusMode.value === 'details' &&
+    expandedRepoId.value === repoId &&
+    detailFocusIndex.value === index
+  );
+}
+
+async function ensureRepoDetails(repo: RepoRecord) {
+  const repoId = repo.id;
+
+  if (repoDetailData.value[repoId]) {
+    return;
+  }
+
+  if (detailLoadPromises[repoId]) {
+    await detailLoadPromises[repoId];
+    return;
+  }
+
+  repoDetailLoading.value = { ...repoDetailLoading.value, [repoId]: true };
+  repoDetailError.value = { ...repoDetailError.value, [repoId]: null };
+
+  const loadPromise = (async () => {
+    try {
+      const [issues, prs] = await Promise.all([
+        sendMessage<IssueRecord[]>(MessageType.GET_ISSUES_BY_REPO, repoId),
+        sendMessage<PullRequestRecord[]>(MessageType.GET_PRS_BY_REPO, repoId),
+      ]);
+
+      repoDetailData.value = {
+        ...repoDetailData.value,
+        [repoId]: {
+          issues,
+          prs,
+        },
+      };
+    } catch (error) {
+      repoDetailError.value = {
+        ...repoDetailError.value,
+        [repoId]: error instanceof Error ? error.message : 'Failed to load repo activity',
+      };
+    } finally {
+      repoDetailLoading.value = { ...repoDetailLoading.value, [repoId]: false };
+    }
+  })();
+
+  detailLoadPromises[repoId] = loadPromise;
+  await loadPromise;
+  detailLoadPromises[repoId] = null;
+}
+
+async function expandFocusedRepo() {
+  if (!preferences.value.syncIssues && !preferences.value.syncPullRequests) {
+    return;
+  }
+
+  const repo = allVisibleRepos.value[focusedIndex.value];
+  if (!repo || repo.indexed === false) {
+    return;
+  }
+
+  expandedRepoId.value = repo.id;
+  focusMode.value = 'details';
+  detailFocusIndex.value = 0;
+
+  await ensureRepoDetails(repo);
+
+  const items = getVisibleRepoDetailItems(repo);
+  if (items.length === 0 && !isRepoDetailsLoading(repo.id)) {
+    collapseExpandedRepo();
+  } else {
+    await nextTick();
+    ensureDetailFocusVisible();
+  }
+}
+
+function collapseExpandedRepo() {
+  expandedRepoId.value = null;
+  detailFocusIndex.value = 0;
+  focusMode.value = 'repos';
+  nextTick(() => ensureRepoFocusVisible());
+}
+
+watch(expandedDetailItems, (items) => {
+  if (focusMode.value !== 'details') return;
+  if (items.length === 0) {
+    detailFocusIndex.value = 0;
+    return;
+  }
+
+  if (detailFocusIndex.value >= items.length) {
+    detailFocusIndex.value = items.length - 1;
+  }
+});
+
+watch(allVisibleRepos, () => {
+  if (!expandedRepoId.value) return;
+  const stillVisible = allVisibleRepos.value.some((repo) => repo.id === expandedRepoId.value);
+  if (!stillVisible) {
+    collapseExpandedRepo();
+  }
+});
+
+watch(normalizedSearchQuery, (query) => {
+  if (!query) return;
+  indexedRepos.value.forEach((repo) => {
+    if (
+      matchesDetailSearch(repo, query) &&
+      !repoDetailData.value[repo.id] &&
+      !repoDetailLoading.value[repo.id]
+    ) {
+      void ensureRepoDetails(repo);
+    }
+  });
+});
+
+watch([focusedIndex, focusMode], () => {
+  nextTick(() => ensureRepoFocusVisible());
+});
+
+watch([detailFocusIndex, focusMode, expandedRepoId], () => {
+  nextTick(() => ensureDetailFocusVisible());
+});
+
 /**
  * Navigate focus up/down with arrow keys
  */
 function moveFocus(direction: 'up' | 'down') {
+  if (focusMode.value === 'details' && expandedRepoId.value) {
+    const items = expandedDetailItems.value;
+    if (items.length === 0) {
+      collapseExpandedRepo();
+    } else {
+      if (direction === 'down') {
+        detailFocusIndex.value = Math.min(detailFocusIndex.value + 1, items.length - 1);
+      } else {
+        detailFocusIndex.value = Math.max(detailFocusIndex.value - 1, 0);
+      }
+      return;
+    }
+  }
+
   const maxIndex = allVisibleRepos.value.length - 1;
   if (maxIndex < 0) return;
 
@@ -284,9 +651,19 @@ function moveFocus(direction: 'up' | 'down') {
 }
 
 /**
- * Navigate to focused repo (triggered by Enter key)
+ * Navigate to focused repo or nested row (triggered by Enter key)
  */
-function navigateToFocusedRepo() {
+function navigateToFocusedTarget() {
+  if (focusMode.value === 'details' && expandedRepoId.value) {
+    const items = expandedDetailItems.value;
+    const item = items[detailFocusIndex.value];
+    if (item) {
+      window.location.href = item.html_url;
+      hide();
+      return;
+    }
+  }
+
   const repo = allVisibleRepos.value[focusedIndex.value];
   if (repo) {
     window.location.href = repo.html_url;
@@ -304,9 +681,15 @@ function handleSearchKeydown(e: KeyboardEvent) {
   } else if (e.key === 'ArrowUp') {
     e.preventDefault();
     moveFocus('up');
+  } else if (e.key === 'ArrowRight') {
+    e.preventDefault();
+    void expandFocusedRepo();
+  } else if (e.key === 'ArrowLeft' && expandedRepoId.value !== null) {
+    e.preventDefault();
+    collapseExpandedRepo();
   } else if (e.key === 'Enter') {
     e.preventDefault();
-    navigateToFocusedRepo();
+    navigateToFocusedTarget();
   }
 }
 
@@ -415,10 +798,12 @@ async function show() {
   // Focus input field
   await nextTick();
   searchInputRef.value?.focus();
+  ensureRepoFocusVisible();
 }
 
 function hide() {
   isVisible.value = false;
+  collapseExpandedRepo();
 }
 
 async function toggle() {
@@ -440,6 +825,11 @@ function handleRepoClick(event: MouseEvent) {
   }
   // Regular click - close the palette
   hide();
+}
+
+function getPullRequestsUrl(repo: RepoRecord): string {
+  const baseUrl = repo.html_url.endsWith('/') ? repo.html_url.slice(0, -1) : repo.html_url;
+  return `${baseUrl}/pulls`;
 }
 
 /**
@@ -513,7 +903,13 @@ function handleBackdropClick(e: MouseEvent) {
 
 function handleKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape' && isVisible.value) {
-    hide();
+    if (normalizedSearchQuery.value) {
+      searchQuery.value = '';
+      detailFocusIndex.value = 0;
+      focusMode.value = 'repos';
+    } else {
+      hide();
+    }
   }
 }
 
@@ -737,6 +1133,24 @@ defineExpose({
   font-weight: 500;
 }
 
+.count-item-link {
+  background: #ecfdf3;
+  border: 1px solid #a7f3d0;
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition:
+    background-color 0.2s,
+    border-color 0.2s;
+  text-decoration: none;
+}
+
+.count-item-link:hover {
+  background: #d1fae5;
+  border-color: #34d399;
+  text-decoration: none;
+}
+
 .count-item .icon {
   fill: currentColor;
   flex-shrink: 0;
@@ -748,6 +1162,129 @@ defineExpose({
 
 .count-item.prs {
   color: #1a7f37;
+}
+
+.repo-details {
+  margin-top: 8px;
+  padding-left: 14px;
+  border-left: 2px solid #d0d7de;
+}
+
+.repo-details-status {
+  font-size: 12px;
+  color: #57606a;
+  padding: 6px 0;
+}
+
+.repo-details-status.error {
+  color: #d73a49;
+}
+
+.repo-details-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 288px;
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
+.repo-details-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 10px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #f6f8fa;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s,
+    background-color 0.2s;
+}
+
+/* dark theme closes should feel muted but legible */
+.repo-details-row.focused {
+  border-color: #0969da;
+  box-shadow: 0 0 0 2px rgba(9, 105, 218, 0.3);
+  background: #eef6ff;
+}
+
+.repo-details-row.closed {
+  border-color: #30363d;
+  background: #161b22;
+  color: #8b949e;
+}
+
+.repo-details-type {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 6px;
+  border-radius: 6px;
+  text-transform: uppercase;
+  justify-self: start;
+  min-width: 66px;
+  text-align: center;
+}
+
+.repo-details-type.pr.open {
+  background: rgba(26, 127, 55, 0.18);
+  color: #37a452;
+}
+
+.repo-details-type.pr.closed {
+  background: rgba(143, 155, 173, 0.2);
+  color: #8b949e;
+}
+
+.repo-details-type.issue.open {
+  background: rgba(9, 105, 218, 0.18);
+  color: #539bf5;
+}
+
+.repo-details-type.issue.closed {
+  background: rgba(143, 155, 173, 0.2);
+  color: #8b949e;
+}
+
+.repo-details-link {
+  font-size: 13px;
+  color: #24292e;
+  text-decoration: none;
+}
+
+.repo-details-link:hover {
+  text-decoration: underline;
+}
+
+.repo-details-row.closed .repo-details-link {
+  color: #8b949e;
+}
+
+.dark-theme .repo-details-row {
+  border-color: #30363d;
+  background: #11161f;
+}
+
+.dark-theme .repo-details-row.focused {
+  background: #192438;
+}
+
+.dark-theme .repo-details-row.closed {
+  background: #0d1117;
+  border-color: #30363d;
+}
+
+.dark-theme .repo-details-link {
+  color: #dfe3ec;
+}
+
+.dark-theme .repo-details-row.closed .repo-details-link {
+  color: #8b949e;
 }
 
 /* (3) Status bar at bottom */

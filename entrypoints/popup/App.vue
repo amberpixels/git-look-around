@@ -18,18 +18,18 @@ const syncStatusText = computed(() => {
   const status = syncStatus.value;
 
   if (status.isRunning) {
-    const { activeRepos, issuesProgress, prsProgress } = status.progress;
+    const { indexedRepos, issuesProgress, prsProgress } = status.progress;
     const account = status.accountLogin ? `@${status.accountLogin}: ` : '';
-    if (activeRepos > 0) {
-      return `${account}Syncing ${Math.max(issuesProgress, prsProgress)}/${activeRepos}...`;
+    if (indexedRepos > 0) {
+      return `${account}Syncing ${Math.max(issuesProgress, prsProgress)}/${indexedRepos}...`;
     } else {
       return `${account}Syncing...`;
     }
   } else if (status.lastCompletedAt) {
     const minutes = Math.round((Date.now() - status.lastCompletedAt) / 60000);
-    const { activeRepos } = status.progress;
+    const { indexedRepos } = status.progress;
     const account = status.accountLogin ? `@${status.accountLogin}` : 'Account';
-    const repoCount = activeRepos > 0 ? ` (${activeRepos} repos)` : '';
+    const repoCount = indexedRepos > 0 ? ` (${indexedRepos} repos)` : '';
     const timeAgo = minutes === 0 ? 'just now' : `${minutes}m ago`;
     return `${account}${repoCount} synced ${timeAgo}`;
   } else {
