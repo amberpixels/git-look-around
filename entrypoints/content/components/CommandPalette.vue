@@ -108,9 +108,40 @@
                     closed: item.state === 'closed',
                   }"
                 >
-                  <span class="repo-details-type" :class="[item.type, item.state]">
-                    {{ item.type === 'pr' ? 'PR' : 'Issue' }} #{{ item.number }}
-                  </span>
+                  <div class="repo-details-meta">
+                    <svg
+                      v-if="item.type === 'pr'"
+                      class="repo-details-icon pr"
+                      :class="item.state"
+                      viewBox="0 0 16 16"
+                      width="14"
+                      height="14"
+                    >
+                      <path
+                        d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"
+                      ></path>
+                    </svg>
+                    <svg
+                      v-else
+                      class="repo-details-icon issue"
+                      :class="item.state"
+                      viewBox="0 0 16 16"
+                      width="14"
+                      height="14"
+                    >
+                      <path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"></path>
+                      <path
+                        d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"
+                      ></path>
+                    </svg>
+                    <span class="repo-details-number">#{{ item.number }}</span>
+                    <img
+                      :src="item.user.avatar_url"
+                      :alt="item.user.login"
+                      :title="`Opened by @${item.user.login}`"
+                      class="repo-details-avatar"
+                    />
+                  </div>
                   <a :href="item.html_url" class="repo-details-link" @click="handleRepoClick">
                     {{ item.title }}
                   </a>
@@ -237,6 +268,10 @@ type RepoDetailItem = {
   number: number;
   state: 'open' | 'closed';
   html_url: string;
+  user: {
+    login: string;
+    avatar_url: string;
+  };
   last_visited_at?: number | null;
   updated_at_ts?: number | null;
 };
@@ -451,6 +486,7 @@ function toRepoDetailItem(
     number: record.number,
     state: record.state,
     html_url: record.html_url,
+    user: record.user,
     last_visited_at: record.last_visited_at ?? null,
     updated_at_ts: record.updated_at ? new Date(record.updated_at).getTime() : null,
   };
@@ -963,9 +999,10 @@ defineExpose({
   height: 100%;
   background: rgba(0, 0, 0, 0.5);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   z-index: 999999;
+  padding-top: 15vh;
 }
 
 .gitjump-popup {
@@ -974,7 +1011,7 @@ defineExpose({
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   max-width: 600px;
   width: 100%;
-  max-height: 80vh;
+  max-height: 70vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1196,8 +1233,7 @@ defineExpose({
 
 .repo-details {
   margin-top: 8px;
-  padding-left: 14px;
-  border-left: 2px solid #d0d7de;
+  padding-left: 0;
 }
 
 .repo-details-status {
@@ -1212,12 +1248,12 @@ defineExpose({
 
 .repo-details-list {
   list-style: none;
-  margin: 8px 0 0;
+  margin: 4px 0 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  max-height: 288px;
+  gap: 0;
+  max-height: 240px;
   overflow-y: auto;
   padding-right: 6px;
 }
@@ -1227,64 +1263,82 @@ defineExpose({
   grid-template-columns: auto 1fr;
   gap: 8px;
   align-items: center;
-  padding: 6px 10px;
-  border: 1px solid #d0d7de;
-  border-radius: 6px;
-  background: #f6f8fa;
+  padding: 4px 12px;
+  border: none;
+  border-bottom: 1px solid #e1e4e8;
+  border-radius: 0;
+  background: transparent;
   transition:
     border-color 0.2s,
-    box-shadow 0.2s,
     background-color 0.2s;
+}
+
+.repo-details-row:last-child {
+  border-bottom: none;
 }
 
 /* dark theme closes should feel muted but legible */
 .repo-details-row.focused {
-  border-color: #0969da;
-  box-shadow: 0 0 0 2px rgba(9, 105, 218, 0.3);
-  background: #eef6ff;
+  background: #f0f6ff;
 }
 
 .repo-details-row.closed {
-  border-color: #30363d;
-  background: #161b22;
+  background: transparent;
   color: #8b949e;
 }
 
-.repo-details-type {
+.repo-details-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.repo-details-icon {
+  flex-shrink: 0;
+  fill: currentColor;
+}
+
+.repo-details-icon.pr.open {
+  color: #1a7f37;
+}
+
+.repo-details-icon.pr.closed {
+  color: #8b949e;
+}
+
+.repo-details-icon.issue.open {
+  color: #0969da;
+}
+
+.repo-details-icon.issue.closed {
+  color: #8b949e;
+}
+
+.repo-details-number {
   font-size: 11px;
   font-weight: 600;
-  padding: 3px 6px;
-  border-radius: 6px;
-  text-transform: uppercase;
-  justify-self: start;
-  min-width: 66px;
-  text-align: center;
+  color: #57606a;
+  white-space: nowrap;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  min-width: 42px;
+  text-align: left;
 }
 
-.repo-details-type.pr.open {
-  background: rgba(26, 127, 55, 0.18);
-  color: #37a452;
-}
-
-.repo-details-type.pr.closed {
-  background: rgba(143, 155, 173, 0.2);
-  color: #8b949e;
-}
-
-.repo-details-type.issue.open {
-  background: rgba(9, 105, 218, 0.18);
-  color: #539bf5;
-}
-
-.repo-details-type.issue.closed {
-  background: rgba(143, 155, 173, 0.2);
-  color: #8b949e;
+.repo-details-avatar {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .repo-details-link {
-  font-size: 13px;
+  font-size: 12px;
   color: #24292e;
   text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .repo-details-link:hover {
@@ -1295,18 +1349,34 @@ defineExpose({
   color: #8b949e;
 }
 
+.repo-details-row.closed .repo-details-number {
+  color: #8b949e;
+}
+
 .dark-theme .repo-details-row {
-  border-color: #30363d;
-  background: #11161f;
+  border-color: #21262d;
+  background: transparent;
 }
 
 .dark-theme .repo-details-row.focused {
-  background: #192438;
+  background: #1c2128;
 }
 
 .dark-theme .repo-details-row.closed {
-  background: #0d1117;
-  border-color: #30363d;
+  background: transparent;
+  border-color: #21262d;
+}
+
+.dark-theme .repo-details-icon.pr.open {
+  color: #3fb950;
+}
+
+.dark-theme .repo-details-icon.issue.open {
+  color: #58a6ff;
+}
+
+.dark-theme .repo-details-number {
+  color: #8b949e;
 }
 
 .dark-theme .repo-details-link {
@@ -1315,6 +1385,10 @@ defineExpose({
 
 .dark-theme .repo-details-row.closed .repo-details-link {
   color: #8b949e;
+}
+
+.dark-theme .repo-details-row.closed .repo-details-number {
+  color: #6e7681;
 }
 
 /* (3) Status bar at bottom */
