@@ -4,7 +4,7 @@
 import { ref, computed } from 'vue';
 import { useBackgroundMessage } from './useBackgroundMessage';
 import { MessageType } from '@/src/messages/types';
-import type { RepoRecord } from '@/src/types';
+import type { RepoRecord, IssueRecord, PullRequestRecord } from '@/src/types';
 
 // No longer needed - indexed status is now stored in the repo record itself
 
@@ -17,6 +17,7 @@ export function useRepos() {
 
   // Track issue/PR counts for each repo
   const repoCounts = ref<Record<number, { issues: number; prs: number }>>({});
+  const repoSearchIndex = ref<Record<number, { issues: string[]; prs: string[] }>>({});
 
   /**
    * Sort repos by priority:
@@ -90,26 +91,33 @@ export function useRepos() {
    */
   async function fetchCounts() {
     const counts: Record<number, { issues: number; prs: number }> = {};
+    const searchIndex: Record<number, { issues: string[]; prs: string[] }> = {};
 
     await Promise.all(
       repos.value.map(async (repo) => {
         try {
           const [issues, prs] = await Promise.all([
-            sendMessage<unknown[]>(MessageType.GET_ISSUES_BY_REPO, repo.id),
-            sendMessage<unknown[]>(MessageType.GET_PRS_BY_REPO, repo.id),
+            sendMessage<IssueRecord[]>(MessageType.GET_ISSUES_BY_REPO, repo.id),
+            sendMessage<PullRequestRecord[]>(MessageType.GET_PRS_BY_REPO, repo.id),
           ]);
           counts[repo.id] = {
             issues: issues.length,
             prs: prs.length,
           };
+          searchIndex[repo.id] = {
+            issues: issues.map((issue) => (issue.title || '').toLowerCase()),
+            prs: prs.map((pr) => (pr.title || '').toLowerCase()),
+          };
         } catch (err) {
           console.error(`[useRepos] Error loading counts for repo ${repo.id}:`, err);
           counts[repo.id] = { issues: 0, prs: 0 };
+          searchIndex[repo.id] = { issues: [], prs: [] };
         }
       }),
     );
 
     repoCounts.value = counts;
+    repoSearchIndex.value = searchIndex;
   }
 
   /**
@@ -139,6 +147,7 @@ export function useRepos() {
     indexedRepos,
     nonIndexedRepos,
     repoCounts,
+    repoSearchIndex,
     loading,
     error,
     fetchRepos,
