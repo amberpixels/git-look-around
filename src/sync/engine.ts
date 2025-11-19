@@ -8,7 +8,9 @@ import {
   getRepoIssues,
   getRepoPullRequests,
   getAuthenticatedUser,
+  getRecentlyUpdatedRepos,
 } from '@/src/api/github';
+
 import {
   saveRepos,
   saveIssues,
@@ -17,6 +19,7 @@ import {
   setMeta,
   getRepo,
 } from '@/src/storage/db';
+
 import { getSyncPreferences } from '@/src/storage/chrome';
 import { isUserContributor } from '@/src/api/contributors';
 import type { IssueRecord, PullRequestRecord } from '@/src/types';
@@ -458,4 +461,226 @@ export async function resetSync(): Promise<void> {
       currentRepo: null,
     },
   });
+}
+
+/**
+ * Quick-check for recently updated repos
+ * Lightweight polling function that checks top 20 repos for updates
+ *
+ * Two modes:
+ * - IDLE: 20-second delay (when user is not actively using the extension)
+ * - BROWSING: 5-second delay (when command palette is open)
+ */
+let quickCheckTimeoutId: ReturnType<typeof setTimeout> | null = null;
+const QUICK_CHECK_DELAY_IDLE_MS = 20 * 1000; // 20 seconds in idle mode
+const QUICK_CHECK_DELAY_BROWSING_MS = 5 * 1000; // 5 seconds when browsing
+const QUICK_CHECK_REPO_LIMIT = 20; // Check top 20 most recently updated repos
+
+type QuickCheckMode = 'idle' | 'browsing';
+let currentQuickCheckMode: QuickCheckMode = 'idle';
+
+function getQuickCheckDelay(): number {
+  return currentQuickCheckMode === 'browsing'
+    ? QUICK_CHECK_DELAY_BROWSING_MS
+    : QUICK_CHECK_DELAY_IDLE_MS;
+}
+
+async function runQuickCheckOnce(): Promise<void> {
+  try {
+    const preferences = await getSyncPreferences();
+
+    // Skip if both issues and PRs sync are disabled
+    if (!preferences.syncIssues && !preferences.syncPullRequests) {
+      return;
+    }
+
+    // Fetch top N recently updated repos
+    const recentRepos = await getRecentlyUpdatedRepos(QUICK_CHECK_REPO_LIMIT);
+
+    // Check each repo against our stored version
+    for (const apiRepo of recentRepos) {
+      const storedRepo = await getRepo(apiRepo.id);
+
+      // Skip if repo doesn't exist in our DB yet (will be picked up by full sync)
+      if (!storedRepo) {
+        continue;
+      }
+
+      // Skip if repo is not indexed
+      if (!storedRepo.indexed) {
+        continue;
+      }
+
+      // Compare updated_at timestamps (covers PRs, issues, comments, not just pushes)
+      const apiUpdatedAt = apiRepo.updated_at ? new Date(apiRepo.updated_at).getTime() : 0;
+      const storedFetchedAt = storedRepo.last_fetched_at || 0;
+
+      // If API shows newer activity, re-sync this repo
+      if (apiUpdatedAt > storedFetchedAt) {
+        console.warn(`[QuickCheck] Detected update in ${apiRepo.full_name}, re-syncing...`);
+
+        const parts = apiRepo.full_name.split('/');
+        if (parts.length < 2) {
+          console.error(`[QuickCheck] Invalid repo full_name: ${apiRepo.full_name}`);
+          continue;
+        }
+        const [owner, repoName] = parts;
+
+        // Update repo record first
+        await saveRepos([
+          {
+            ...apiRepo,
+            last_fetched_at: Date.now(),
+            me_contributing: storedRepo.me_contributing,
+            indexed_manually: storedRepo.indexed_manually,
+            indexed: storedRepo.indexed,
+          },
+        ]);
+
+        // Re-sync issues and PRs based on preferences
+        const syncPromises: Promise<void>[] = [];
+
+        if (preferences.syncIssues) {
+          syncPromises.push(
+            getRepoIssues(owner, repoName, 'all')
+              .then((issues) => {
+                const issueRecords: IssueRecord[] = issues.map((issue) => ({
+                  ...issue,
+                  repo_id: apiRepo.id,
+                  last_fetched_at: Date.now(),
+                }));
+                return saveIssues(issueRecords);
+              })
+              .then(() => {
+                console.warn(`[QuickCheck] ✓ Re-synced issues for ${apiRepo.full_name}`);
+              })
+              .catch((err) => {
+                console.error(
+                  `[QuickCheck] ✗ Failed to re-sync issues for ${apiRepo.full_name}:`,
+                  err,
+                );
+              }),
+          );
+        }
+
+        if (preferences.syncPullRequests) {
+          syncPromises.push(
+            getRepoPullRequests(owner, repoName)
+              .then((prs) => {
+                const prRecords: PullRequestRecord[] = prs.map((pr) => ({
+                  ...pr,
+                  repo_id: apiRepo.id,
+                  last_fetched_at: Date.now(),
+                }));
+                return savePullRequests(prRecords);
+              })
+              .then(() => {
+                console.warn(`[QuickCheck] ✓ Re-synced PRs for ${apiRepo.full_name}`);
+              })
+              .catch((err) => {
+                console.error(
+                  `[QuickCheck] ✗ Failed to re-sync PRs for ${apiRepo.full_name}:`,
+                  err,
+                );
+              }),
+          );
+        }
+
+        await Promise.all(syncPromises);
+      }
+    }
+  } catch (error) {
+    console.error('[QuickCheck] Error during quick check:', error);
+  }
+}
+
+/**
+ * Schedule the next quick-check iteration
+ */
+function scheduleNextQuickCheck(): void {
+  const delay = getQuickCheckDelay();
+  quickCheckTimeoutId = setTimeout(() => {
+    runQuickCheckOnce()
+      .catch((err) => {
+        console.error('[QuickCheck] Unexpected error in loop:', err);
+      })
+      .finally(() => {
+        scheduleNextQuickCheck();
+      });
+  }, delay);
+}
+
+/**
+ * Start the continuous quick-check polling loop
+ * Runs check, waits for delay, then runs again (self-scheduling)
+ */
+export function startQuickCheckLoop(): void {
+  // Clear any existing timeout
+  if (quickCheckTimeoutId) {
+    clearTimeout(quickCheckTimeoutId);
+  }
+
+  console.warn('[QuickCheck] Starting continuous polling loop (idle: 20s, browsing: 5s)');
+
+  // Run first check immediately, then schedule subsequent checks
+  runQuickCheckOnce()
+    .catch((err) => {
+      console.error('[QuickCheck] Error in initial check:', err);
+    })
+    .finally(() => {
+      scheduleNextQuickCheck();
+    });
+}
+
+/**
+ * Switch to BROWSING mode (faster polling) and trigger immediate check
+ * Call this when the command palette opens
+ */
+export function setQuickCheckBrowsingMode(): void {
+  if (currentQuickCheckMode === 'browsing') {
+    return; // Already in browsing mode
+  }
+
+  console.warn('[QuickCheck] Switching to BROWSING mode (5s delay)');
+  currentQuickCheckMode = 'browsing';
+
+  // Cancel current timeout and run check immediately
+  if (quickCheckTimeoutId) {
+    clearTimeout(quickCheckTimeoutId);
+    quickCheckTimeoutId = null;
+  }
+
+  // Run immediate check, then schedule next with new delay
+  runQuickCheckOnce()
+    .catch((err) => {
+      console.error('[QuickCheck] Error in immediate check:', err);
+    })
+    .finally(() => {
+      scheduleNextQuickCheck();
+    });
+}
+
+/**
+ * Switch back to IDLE mode (slower polling)
+ * Call this when the command palette closes
+ */
+export function setQuickCheckIdleMode(): void {
+  if (currentQuickCheckMode === 'idle') {
+    return; // Already in idle mode
+  }
+
+  console.warn('[QuickCheck] Switching to IDLE mode (20s delay)');
+  currentQuickCheckMode = 'idle';
+  // Loop will pick up the new delay on next iteration
+}
+
+/**
+ * Stop the quick-check polling loop
+ */
+export function stopQuickCheckLoop(): void {
+  if (quickCheckTimeoutId) {
+    clearTimeout(quickCheckTimeoutId);
+    quickCheckTimeoutId = null;
+    console.warn('[QuickCheck] Stopped polling loop');
+  }
 }

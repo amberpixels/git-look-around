@@ -11,6 +11,8 @@ export const MessageType = {
   FORCE_SYNC: 'FORCE_SYNC',
   RECORD_VISIT: 'RECORD_VISIT',
   SET_REPO_INDEXED: 'SET_REPO_INDEXED',
+  SET_QUICK_CHECK_BROWSING: 'SET_QUICK_CHECK_BROWSING',
+  SET_QUICK_CHECK_IDLE: 'SET_QUICK_CHECK_IDLE',
 } as const;
 
 export type MessageType = (typeof MessageType)[keyof typeof MessageType];

@@ -1,6 +1,13 @@
 import { MessageType } from '@/src/messages/types';
 import type { ExtensionMessage } from '@/src/messages/types';
-import { runSync, getSyncStatus, forceSync } from '@/src/sync/engine';
+import {
+  runSync,
+  getSyncStatus,
+  forceSync,
+  startQuickCheckLoop,
+  setQuickCheckBrowsingMode,
+  setQuickCheckIdleMode,
+} from '@/src/sync/engine';
 import { getLastRateLimit } from '@/src/api/github';
 import {
   getAllRepos,
@@ -14,9 +21,17 @@ export default defineBackground(() => {
   console.warn('[Background] Gitjump background initialized', { id: browser.runtime.id });
 
   // Run initial sync when extension loads
-  runSync().catch((err) => {
-    console.error('[Background] Initial sync failed:', err);
-  });
+  runSync()
+    .then(() => {
+      // Start quick-check polling loop after initial sync completes
+      console.warn('[Background] Initial sync completed, starting quick-check loop...');
+      startQuickCheckLoop();
+    })
+    .catch((err) => {
+      console.error('[Background] Initial sync failed:', err);
+      // Still start quick-check even if initial sync fails
+      startQuickCheckLoop();
+    });
 
   // Listen for keyboard command
   browser.commands.onCommand.addListener((command) => {
@@ -92,6 +107,18 @@ export default defineBackground(() => {
               indexed: boolean;
             };
             await setRepoIndexed(repoId, indexed);
+            sendResponse({ success: true });
+            break;
+          }
+
+          case MessageType.SET_QUICK_CHECK_BROWSING: {
+            setQuickCheckBrowsingMode();
+            sendResponse({ success: true });
+            break;
+          }
+
+          case MessageType.SET_QUICK_CHECK_IDLE: {
+            setQuickCheckIdleMode();
             sendResponse({ success: true });
             break;
           }

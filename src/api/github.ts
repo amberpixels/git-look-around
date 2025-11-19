@@ -244,3 +244,38 @@ export async function getAllAccessibleRepos(): Promise<GitHubRepo[]> {
 
   return uniqueRepos;
 }
+
+/**
+ * Get only the first page of recently updated repos (lightweight for quick checks)
+ * Returns top N repos sorted by most recently updated
+ * Note: GitHub API sort=updated covers PRs, issues, comments - not just pushes
+ */
+export async function getRecentlyUpdatedRepos(limit: number = 20): Promise<GitHubRepo[]> {
+  const allRepos: GitHubRepo[] = [];
+
+  // Fetch first page of user repos (sorted by updated)
+  const userReposResponse = await githubFetch(`/user/repos?per_page=100&sort=updated&page=1`);
+  const userRepos: GitHubRepo[] = await userReposResponse.json();
+  allRepos.push(...userRepos);
+
+  // Fetch first page of org repos for each org
+  const orgs = await getUserOrganizations();
+  const orgReposPromises = orgs.map(async (org) => {
+    const response = await githubFetch(`/orgs/${org.login}/repos?per_page=100&sort=updated&page=1`);
+    return response.json() as Promise<GitHubRepo[]>;
+  });
+  const orgReposArrays = await Promise.all(orgReposPromises);
+  const allOrgRepos = orgReposArrays.flat();
+  allRepos.push(...allOrgRepos);
+
+  // Deduplicate and sort by updated_at (most recent first)
+  const uniqueRepos = Array.from(new Map(allRepos.map((repo) => [repo.id, repo])).values());
+  uniqueRepos.sort((a, b) => {
+    const dateA = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+    const dateB = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+    return dateB - dateA; // Descending order (most recent first)
+  });
+
+  // Return top N repos
+  return uniqueRepos.slice(0, limit);
+}

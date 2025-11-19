@@ -858,6 +858,8 @@ async function show() {
   isVisible.value = true;
   searchQuery.value = ''; // Reset search on open
   focusedIndex.value = 0; // Reset focus to first item
+  // Switch to browsing mode for faster polling
+  sendMessage(MessageType.SET_QUICK_CHECK_BROWSING);
   // Load data immediately
   await loadReposData();
   // Focus input field
@@ -869,6 +871,8 @@ async function show() {
 function hide() {
   isVisible.value = false;
   collapseExpandedRepo();
+  // Switch back to idle mode for slower polling
+  sendMessage(MessageType.SET_QUICK_CHECK_IDLE);
 }
 
 async function toggle() {
