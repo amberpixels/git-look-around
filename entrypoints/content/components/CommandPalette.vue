@@ -717,22 +717,31 @@ function moveFocus(direction: 'up' | 'down') {
 
 /**
  * Navigate to focused repo or nested row (triggered by Enter key)
+ * @param newTab - if true, open in new tab instead of current tab
  */
-function navigateToFocusedTarget() {
+function navigateToFocusedTarget(newTab: boolean = false) {
+  let url: string | null = null;
+
   if (focusMode.value === 'details' && expandedRepoId.value) {
     const items = expandedDetailItems.value;
     const item = items[detailFocusIndex.value];
     if (item) {
-      window.location.href = item.html_url;
-      hide();
-      return;
+      url = item.html_url;
+    }
+  } else {
+    const repo = allVisibleRepos.value[focusedIndex.value];
+    if (repo) {
+      url = repo.html_url;
     }
   }
 
-  const repo = allVisibleRepos.value[focusedIndex.value];
-  if (repo) {
-    window.location.href = repo.html_url;
-    hide();
+  if (url) {
+    if (newTab) {
+      window.open(url, '_blank');
+    } else {
+      window.location.href = url;
+      hide();
+    }
   }
 }
 
@@ -754,7 +763,9 @@ function handleSearchKeydown(e: KeyboardEvent) {
     collapseExpandedRepo();
   } else if (e.key === 'Enter') {
     e.preventDefault();
-    navigateToFocusedTarget();
+    // Cmd+Enter (macOS) or Ctrl+Enter (Windows/Linux) opens in new tab
+    const newTab = e.metaKey || e.ctrlKey;
+    navigateToFocusedTarget(newTab);
   }
 }
 
@@ -970,15 +981,66 @@ function handleBackdropClick(e: MouseEvent) {
 }
 
 function handleKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape' && isVisible.value) {
-    if (normalizedSearchQuery.value) {
-      // Clear search and reset focus to first repo
+  if (!isVisible.value) return;
+
+  const isSearchFocused = document.activeElement === searchInputRef.value;
+
+  console.warn('[Keydown]', e.key, { isSearchFocused, searchQuery: searchQuery.value, activeElement: document.activeElement });
+
+  if (e.key === 'Escape') {
+    // Smart Escape cascade:
+    // 1. If in Tab-focus mode (focus somewhere else) → return to normal mode (focus on list)
+    // 2. If in filtered mode (search has text) → clear search and switch to normal mode
+    // 3. If in normal mode → hide palette
+
+    if (!isSearchFocused) {
+      // Tab-focus mode: return to normal mode (focus on list, not search)
+      console.warn('[Escape] Tab-focus mode -> blur');
+      e.preventDefault();
+      // Blur any focused element and keep focus on list
+      (document.activeElement as HTMLElement)?.blur();
+    } else if (searchQuery.value.trim()) {
+      // Filtered mode: clear search and switch to normal mode
+      console.warn('[Escape] Filtered mode -> clear and blur');
+      e.preventDefault();
       searchQuery.value = '';
       focusedIndex.value = 0;
       detailFocusIndex.value = 0;
       focusMode.value = 'repos';
+      collapseExpandedRepo();
+      // Blur search input to enter normal mode (focus on list)
+      searchInputRef.value?.blur();
     } else {
-      hide();
+      // Normal mode (search input focused but empty): blur to enter list mode
+      console.warn('[Escape] Empty search -> blur');
+      e.preventDefault();
+      searchInputRef.value?.blur();
+    }
+    return;
+  }
+
+  // Handle navigation keys in normal mode (when search input is not focused)
+  if (!isSearchFocused) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      moveFocus('down');
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      moveFocus('up');
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      void expandFocusedRepo();
+    } else if (e.key === 'ArrowLeft' && expandedRepoId.value !== null) {
+      e.preventDefault();
+      collapseExpandedRepo();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const newTab = e.metaKey || e.ctrlKey;
+      navigateToFocusedTarget(newTab);
+    } else if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      // Any printable character: focus search and let it type
+      searchInputRef.value?.focus();
+      // Don't prevent default - let the character be typed
     }
   }
 }
@@ -1130,7 +1192,8 @@ defineExpose({
 }
 
 .repo-item.focused {
-  background: #f6f8fa;
+  background: #ddf4ff;
+  box-shadow: inset 3px 0 0 #0969da;
 }
 
 .repo-header {
@@ -1238,6 +1301,12 @@ defineExpose({
 .repo-details {
   margin-top: 8px;
   padding-left: 0;
+  background: #f6f8fa;
+  margin-left: -12px;
+  margin-right: -12px;
+  padding-left: 12px;
+  padding-right: 12px;
+  padding-bottom: 8px;
 }
 
 .repo-details-status {
@@ -1268,21 +1337,19 @@ defineExpose({
   gap: 6px;
   padding: 4px 12px;
   border: none;
-  border-bottom: 1px solid #e1e4e8;
   border-radius: 0;
   background: transparent;
-  transition:
-    border-color 0.2s,
-    background-color 0.2s;
+  transition: background-color 0.2s;
 }
 
-.repo-details-row:last-child {
-  border-bottom: none;
-}
-
-/* dark theme closes should feel muted but legible */
 .repo-details-row.focused {
-  background: #f0f6ff;
+  background: #ddf4ff;
+  box-shadow: inset 3px 0 0 #0969da;
+}
+
+/* Ensure closed items are still clearly visible when focused */
+.repo-details-row.closed.focused {
+  background: #ddf4ff;
 }
 
 .repo-details-row.closed {
@@ -1360,18 +1427,25 @@ defineExpose({
   color: #8b949e;
 }
 
+.dark-theme .repo-details {
+  background: #0d1117;
+}
+
 .dark-theme .repo-details-row {
-  border-color: #21262d;
   background: transparent;
 }
 
 .dark-theme .repo-details-row.focused {
-  background: #1c2128;
+  background: #1c3a5e;
+  box-shadow: inset 3px 0 0 #58a6ff;
+}
+
+.dark-theme .repo-details-row.closed.focused {
+  background: #1c3a5e;
 }
 
 .dark-theme .repo-details-row.closed {
   background: transparent;
-  border-color: #21262d;
 }
 
 .dark-theme .repo-details-icon.pr.open {
@@ -1526,7 +1600,8 @@ defineExpose({
 }
 
 .dark-theme .repo-item.focused {
-  background: #161b22;
+  background: #1c3a5e;
+  box-shadow: inset 3px 0 0 #58a6ff;
 }
 
 .dark-theme .repo-link {
