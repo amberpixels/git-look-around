@@ -246,36 +246,51 @@ export async function getAllAccessibleRepos(): Promise<GitHubRepo[]> {
 }
 
 /**
- * Get only the first page of recently updated repos (lightweight for quick checks)
- * Returns top N repos sorted by most recently updated
- * Note: GitHub API sort=updated covers PRs, issues, comments - not just pushes
+ * Get only the first page of recently pushed repos (lightweight for quick checks)
+ * Returns top N repos sorted by most recently pushed
  */
-export async function getRecentlyUpdatedRepos(limit: number = 20): Promise<GitHubRepo[]> {
+export async function getRecentlyPushedRepos(limit: number = 20): Promise<GitHubRepo[]> {
   const allRepos: GitHubRepo[] = [];
 
-  // Fetch first page of user repos (sorted by updated)
-  const userReposResponse = await githubFetch(`/user/repos?per_page=100&sort=updated&page=1`);
+  // Fetch first page of user repos (sorted by pushed)
+  const userReposResponse = await githubFetch(`/user/repos?per_page=${limit}&sort=pushed&page=1`);
   const userRepos: GitHubRepo[] = await userReposResponse.json();
   allRepos.push(...userRepos);
 
   // Fetch first page of org repos for each org
   const orgs = await getUserOrganizations();
   const orgReposPromises = orgs.map(async (org) => {
-    const response = await githubFetch(`/orgs/${org.login}/repos?per_page=100&sort=updated&page=1`);
+    const response = await githubFetch(
+      `/orgs/${org.login}/repos?per_page=${limit}&sort=pushed&page=1`,
+    );
     return response.json() as Promise<GitHubRepo[]>;
   });
   const orgReposArrays = await Promise.all(orgReposPromises);
   const allOrgRepos = orgReposArrays.flat();
   allRepos.push(...allOrgRepos);
 
-  // Deduplicate and sort by updated_at (most recent first)
+  // Deduplicate and sort by pushed_at (most recent first)
   const uniqueRepos = Array.from(new Map(allRepos.map((repo) => [repo.id, repo])).values());
   uniqueRepos.sort((a, b) => {
-    const dateA = a.updated_at ? new Date(a.updated_at).getTime() : 0;
-    const dateB = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+    const dateA = a.pushed_at ? new Date(a.pushed_at).getTime() : 0;
+    const dateB = b.pushed_at ? new Date(b.pushed_at).getTime() : 0;
     return dateB - dateA; // Descending order (most recent first)
   });
 
   // Return top N repos
   return uniqueRepos.slice(0, limit);
+}
+
+/**
+ * Get top N recently updated PRs for a repo (lightweight for quick checks)
+ */
+export async function getRecentlyUpdatedPRs(
+  owner: string,
+  repo: string,
+  limit: number = 10,
+): Promise<GitHubPullRequest[]> {
+  const response = await githubFetch(
+    `/repos/${owner}/${repo}/pulls?per_page=${limit}&state=all&sort=updated&direction=desc`,
+  );
+  return response.json();
 }

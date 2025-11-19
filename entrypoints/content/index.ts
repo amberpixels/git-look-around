@@ -9,29 +9,39 @@ import type { ExtensionMessage } from '@/src/messages/types';
 async function detectAndRecordVisit() {
   const path = window.location.pathname;
 
-  // Match patterns:
-  // Repo: /owner/repo
-  // Issue: /owner/repo/issues/123
-  // PR: /owner/repo/pull/123
+  // Match any page within a repo: /owner/repo or /owner/repo/anything
+  // Excludes special GitHub pages like /settings, /notifications, /explore, etc.
+  const repoMatch = path.match(/^\/([^/]+)\/([^/]+)/);
 
-  const repoMatch = path.match(/^\/([^/]+)\/([^/]+)\/?$/);
-  const issueMatch = path.match(/^\/([^/]+)\/([^/]+)\/issues\/(\d+)/);
-  const prMatch = path.match(/^\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+  // Skip if it's a special GitHub page (not a real repo)
+  const specialPages = [
+    'settings',
+    'notifications',
+    'explore',
+    'trending',
+    'collections',
+    'events',
+    'sponsors',
+    'login',
+    'signup',
+    'pricing',
+    'features',
+    'enterprise',
+    'team',
+    'about',
+    'contact',
+    'security',
+    'site',
+  ];
 
-  if (issueMatch) {
-    // Issue page - need to get issue ID from DOM/API
-    const [, owner, repo, issueNumber] = issueMatch;
-    console.warn(`[Gitjump] On issue: ${owner}/${repo}#${issueNumber}`);
-    // TODO: We need to get the actual GitHub issue ID, not just the number
-    // For now, skip until we implement a mapping or fetch from API
-  } else if (prMatch) {
-    // PR page - need to get PR ID from DOM/API
-    const [, owner, repo, prNumber] = prMatch;
-    console.warn(`[Gitjump] On PR: ${owner}/${repo}#${prNumber}`);
-    // TODO: Same as above
-  } else if (repoMatch) {
-    // Repository page
+  if (repoMatch) {
     const [, owner, repo] = repoMatch;
+
+    // Skip special pages
+    if (specialPages.includes(owner)) {
+      return;
+    }
+
     const fullName = `${owner}/${repo}`;
     console.warn(`[Gitjump] On repo: ${fullName}`);
 

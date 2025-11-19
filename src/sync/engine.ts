@@ -8,7 +8,8 @@ import {
   getRepoIssues,
   getRepoPullRequests,
   getAuthenticatedUser,
-  getRecentlyUpdatedRepos,
+  getRecentlyPushedRepos,
+  getRecentlyUpdatedPRs,
 } from '@/src/api/github';
 
 import {
@@ -468,13 +469,14 @@ export async function resetSync(): Promise<void> {
  * Lightweight polling function that checks top 20 repos for updates
  *
  * Two modes:
- * - IDLE: 20-second delay (when user is not actively using the extension)
- * - BROWSING: 5-second delay (when command palette is open)
+ * - IDLE: 30-second delay (when user is not actively using the extension)
+ * - BROWSING: 10-second delay (when command palette is open)
  */
 let quickCheckTimeoutId: ReturnType<typeof setTimeout> | null = null;
-const QUICK_CHECK_DELAY_IDLE_MS = 20 * 1000; // 20 seconds in idle mode
-const QUICK_CHECK_DELAY_BROWSING_MS = 5 * 1000; // 5 seconds when browsing
-const QUICK_CHECK_REPO_LIMIT = 20; // Check top 20 most recently updated repos
+const QUICK_CHECK_DELAY_IDLE_MS = 30 * 1000; // 30 seconds in idle mode
+const QUICK_CHECK_DELAY_BROWSING_MS = 10 * 1000; // 10 seconds when browsing
+const QUICK_CHECK_REPO_LIMIT = 20; // Check top 20 most recently pushed repos
+const QUICK_CHECK_PR_LIMIT = 10; // Check top 10 most recently updated PRs per repo
 
 type QuickCheckMode = 'idle' | 'browsing';
 let currentQuickCheckMode: QuickCheckMode = 'idle';
@@ -486,18 +488,24 @@ function getQuickCheckDelay(): number {
 }
 
 async function runQuickCheckOnce(): Promise<void> {
+  const startTime = new Date();
+  console.warn(
+    `[QuickCheck] Starting check at ${startTime.toLocaleTimeString()} (mode: ${currentQuickCheckMode})`,
+  );
+
   try {
     const preferences = await getSyncPreferences();
 
-    // Skip if both issues and PRs sync are disabled
-    if (!preferences.syncIssues && !preferences.syncPullRequests) {
+    // Skip if PRs sync is disabled (we only check PRs in quick-check now)
+    if (!preferences.syncPullRequests) {
+      console.warn('[QuickCheck] Skipped - PR sync disabled in preferences');
       return;
     }
 
-    // Fetch top N recently updated repos
-    const recentRepos = await getRecentlyUpdatedRepos(QUICK_CHECK_REPO_LIMIT);
+    // Fetch top N recently pushed repos
+    const recentRepos = await getRecentlyPushedRepos(QUICK_CHECK_REPO_LIMIT);
 
-    // Check each repo against our stored version
+    // Check each repo's PRs for updates
     for (const apiRepo of recentRepos) {
       const storedRepo = await getRepo(apiRepo.id);
 
@@ -511,22 +519,44 @@ async function runQuickCheckOnce(): Promise<void> {
         continue;
       }
 
-      // Compare updated_at timestamps (covers PRs, issues, comments, not just pushes)
-      const apiUpdatedAt = apiRepo.updated_at ? new Date(apiRepo.updated_at).getTime() : 0;
+      const parts = apiRepo.full_name.split('/');
+      if (parts.length < 2) {
+        console.error(`[QuickCheck] Invalid repo full_name: ${apiRepo.full_name}`);
+        continue;
+      }
+      const [owner, repoName] = parts;
+
+      // Fetch top N recently updated PRs for this repo
+      const recentPRs = await getRecentlyUpdatedPRs(owner, repoName, QUICK_CHECK_PR_LIMIT);
+
+      // Check if any PR has been updated since our last fetch
       const storedFetchedAt = storedRepo.last_fetched_at || 0;
 
-      // If API shows newer activity, re-sync this repo
-      if (apiUpdatedAt > storedFetchedAt) {
-        console.warn(`[QuickCheck] Detected update in ${apiRepo.full_name}, re-syncing...`);
+      // Debug: Log comparison for first repo in the list
+      if (recentPRs.length > 0) {
+        const firstPR = recentPRs[0];
+        const firstPRUpdatedAt = firstPR.updated_at ? new Date(firstPR.updated_at).getTime() : 0;
+        console.warn(
+          `[QuickCheck] ${apiRepo.full_name}: comparing PR#${firstPR.number} updated_at=${new Date(firstPRUpdatedAt).toISOString()} vs repo.last_fetched_at=${new Date(storedFetchedAt).toISOString()}`,
+        );
+      }
+      const updatedPRs = recentPRs.filter((pr) => {
+        const prUpdatedAt = pr.updated_at ? new Date(pr.updated_at).getTime() : 0;
+        return prUpdatedAt > storedFetchedAt;
+      });
 
-        const parts = apiRepo.full_name.split('/');
-        if (parts.length < 2) {
-          console.error(`[QuickCheck] Invalid repo full_name: ${apiRepo.full_name}`);
-          continue;
+      if (updatedPRs.length > 0) {
+        // Log which PRs triggered the update
+        for (const pr of updatedPRs) {
+          console.warn(
+            `[QuickCheck] 🔄 PR needs update: ${apiRepo.full_name}#${pr.number} "${pr.title}" (updated: ${pr.updated_at})`,
+          );
         }
-        const [owner, repoName] = parts;
+        console.warn(
+          `[QuickCheck] Detected ${updatedPRs.length} updated PR(s) in ${apiRepo.full_name}, re-syncing...`,
+        );
 
-        // Update repo record first
+        // Update repo record
         await saveRepos([
           {
             ...apiRepo,
@@ -537,58 +567,27 @@ async function runQuickCheckOnce(): Promise<void> {
           },
         ]);
 
-        // Re-sync issues and PRs based on preferences
-        const syncPromises: Promise<void>[] = [];
-
-        if (preferences.syncIssues) {
-          syncPromises.push(
-            getRepoIssues(owner, repoName, 'all')
-              .then((issues) => {
-                const issueRecords: IssueRecord[] = issues.map((issue) => ({
-                  ...issue,
-                  repo_id: apiRepo.id,
-                  last_fetched_at: Date.now(),
-                }));
-                return saveIssues(issueRecords);
-              })
-              .then(() => {
-                console.warn(`[QuickCheck] ✓ Re-synced issues for ${apiRepo.full_name}`);
-              })
-              .catch((err) => {
-                console.error(
-                  `[QuickCheck] ✗ Failed to re-sync issues for ${apiRepo.full_name}:`,
-                  err,
-                );
-              }),
-          );
+        // Re-sync all PRs for this repo
+        try {
+          const allPRs = await getRepoPullRequests(owner, repoName);
+          const prRecords: PullRequestRecord[] = allPRs.map((pr) => ({
+            ...pr,
+            repo_id: apiRepo.id,
+            last_fetched_at: Date.now(),
+          }));
+          await savePullRequests(prRecords);
+          console.warn(`[QuickCheck] ✓ Re-synced ${allPRs.length} PRs for ${apiRepo.full_name}`);
+        } catch (err) {
+          console.error(`[QuickCheck] ✗ Failed to re-sync PRs for ${apiRepo.full_name}:`, err);
         }
-
-        if (preferences.syncPullRequests) {
-          syncPromises.push(
-            getRepoPullRequests(owner, repoName)
-              .then((prs) => {
-                const prRecords: PullRequestRecord[] = prs.map((pr) => ({
-                  ...pr,
-                  repo_id: apiRepo.id,
-                  last_fetched_at: Date.now(),
-                }));
-                return savePullRequests(prRecords);
-              })
-              .then(() => {
-                console.warn(`[QuickCheck] ✓ Re-synced PRs for ${apiRepo.full_name}`);
-              })
-              .catch((err) => {
-                console.error(
-                  `[QuickCheck] ✗ Failed to re-sync PRs for ${apiRepo.full_name}:`,
-                  err,
-                );
-              }),
-          );
-        }
-
-        await Promise.all(syncPromises);
       }
     }
+
+    const endTime = new Date();
+    const durationMs = endTime.getTime() - startTime.getTime();
+    console.warn(
+      `[QuickCheck] Completed at ${endTime.toLocaleTimeString()} (took ${durationMs}ms)`,
+    );
   } catch (error) {
     console.error('[QuickCheck] Error during quick check:', error);
   }
@@ -620,7 +619,7 @@ export function startQuickCheckLoop(): void {
     clearTimeout(quickCheckTimeoutId);
   }
 
-  console.warn('[QuickCheck] Starting continuous polling loop (idle: 20s, browsing: 5s)');
+  console.warn('[QuickCheck] Starting continuous polling loop (idle: 30s, browsing: 10s)');
 
   // Run first check immediately, then schedule subsequent checks
   runQuickCheckOnce()
@@ -641,7 +640,7 @@ export function setQuickCheckBrowsingMode(): void {
     return; // Already in browsing mode
   }
 
-  console.warn('[QuickCheck] Switching to BROWSING mode (5s delay)');
+  console.warn('[QuickCheck] Switching to BROWSING mode (10s delay)');
   currentQuickCheckMode = 'browsing';
 
   // Cancel current timeout and run check immediately
@@ -669,7 +668,7 @@ export function setQuickCheckIdleMode(): void {
     return; // Already in idle mode
   }
 
-  console.warn('[QuickCheck] Switching to IDLE mode (20s delay)');
+  console.warn('[QuickCheck] Switching to IDLE mode (30s delay)');
   currentQuickCheckMode = 'idle';
   // Loop will pick up the new delay on next iteration
 }
