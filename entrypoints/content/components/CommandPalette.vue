@@ -1,5 +1,5 @@
 <template>
-  <div v-if="isVisible" class="gitjump-overlay" @click="handleBackdropClick">
+  <div v-if="panelMode !== 'HIDDEN'" class="gitjump-overlay" @click="handleBackdropClick">
     <div class="gitjump-popup" :class="{ 'dark-theme': isDarkTheme }">
       <!-- (1) Search input bar -->
       <div class="search-bar">
@@ -8,7 +8,10 @@
           v-model="searchQuery"
           type="text"
           class="search-input"
-          @keydown="handleSearchKeydown"
+          @keydown.capture="handleSearchKeydown"
+          @focus="enterFilteredMode"
+          @blur="handleInputBlur"
+          @input="handleSearchInput"
         />
       </div>
 
@@ -245,7 +248,6 @@ import { useBackgroundMessage } from '@/src/composables/useBackgroundMessage';
 import { MessageType } from '@/src/messages/types';
 import type { RepoRecord, IssueRecord, PullRequestRecord } from '@/src/types';
 
-const isVisible = ref(false);
 const searchQuery = ref('');
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const searchInputRef = ref<any>(null);
@@ -254,6 +256,17 @@ const focusedIndex = ref(0); // Index of currently focused repo
 const focusMode = ref<'repos' | 'details'>('repos');
 const detailFocusIndex = ref(0);
 const expandedRepoId = ref<number | null>(null);
+
+// Panel modes: NORMAL (unfocused list), FILTERED (focused search), or HIDDEN (closed)
+type PanelMode = 'NORMAL' | 'FILTERED' | 'HIDDEN';
+const panelMode = ref<PanelMode>('HIDDEN');
+
+// Flag to skip blur handler (used when we explicitly blur during ESC)
+const skipNextBlurHandler = ref(false);
+
+// Flag to skip initial focus event (when we programmatically focus on open)
+const skipNextFocusEvent = ref(false);
+
 const normalizedSearchQuery = computed(() => searchQuery.value.trim().toLowerCase());
 
 type RepoDetailData = {
@@ -746,9 +759,36 @@ function navigateToFocusedTarget(newTab: boolean = false) {
 }
 
 /**
- * Handle keyboard navigation in search input
+ * Handle keyboard navigation in search input (FILTERED mode)
+ * This only triggers when the input element has focus
  */
 function handleSearchKeydown(e: KeyboardEvent) {
+  console.warn('[Gitjump] handleSearchKeydown called', {
+    key: e.key,
+    panelMode: panelMode.value,
+  });
+
+  // Handle ESC in input to prevent auto-blur
+  if (e.key === 'Escape') {
+    console.warn('[Gitjump] ESC detected in handleSearchKeydown');
+    e.preventDefault();
+    e.stopPropagation();
+    console.warn('[Gitjump] ESC prevented default and stopped propagation');
+
+    if (panelMode.value === 'FILTERED') {
+      console.warn('[Gitjump] ESC in FILTERED mode - clearing and returning to NORMAL');
+      exitFilteredModeAndClear();
+      skipNextBlurHandler.value = true;
+      console.warn('[Gitjump] skipNextBlurHandler set to true, about to blur');
+      searchInputRef.value?.blur();
+    } else if (panelMode.value === 'NORMAL') {
+      console.warn('[Gitjump] ESC in NORMAL mode - closing palette');
+      hide();
+    }
+    return;
+  }
+
+  // In FILTERED mode, allow navigation with arrow keys while typing
   if (e.key === 'ArrowDown') {
     e.preventDefault();
     moveFocus('down');
@@ -766,6 +806,19 @@ function handleSearchKeydown(e: KeyboardEvent) {
     // Cmd+Enter (macOS) or Ctrl+Enter (Windows/Linux) opens in new tab
     const newTab = e.metaKey || e.ctrlKey;
     navigateToFocusedTarget(newTab);
+  }
+}
+
+/**
+ * Handle text input - trigger FILTERED mode when user starts typing
+ */
+function handleSearchInput() {
+  if (searchQuery.value.trim() && panelMode.value === 'NORMAL') {
+    console.warn('[Gitjump] User typed, entering FILTERED mode');
+    panelMode.value = 'FILTERED';
+  } else if (!searchQuery.value.trim() && panelMode.value === 'FILTERED') {
+    console.warn('[Gitjump] Search cleared, returning to NORMAL mode');
+    panelMode.value = 'NORMAL';
   }
 }
 
@@ -865,29 +918,88 @@ const rateLimitTooltip = computed(() => {
   return `${remaining}/${limit} requests remaining, resets at ${resetTime}`;
 });
 
+/**
+ * Panel mode transitions
+ */
+function enterFilteredMode() {
+  console.warn('[Gitjump] enterFilteredMode called', {
+    currentMode: panelMode.value,
+    skipNextFocusEvent: skipNextFocusEvent.value,
+  });
+  if (skipNextFocusEvent.value) {
+    skipNextFocusEvent.value = false;
+    console.warn('[Gitjump] Skipping initial focus event');
+    return;
+  }
+  if (panelMode.value === 'NORMAL') {
+    panelMode.value = 'FILTERED';
+    console.warn('[Gitjump] Switched to FILTERED mode');
+  }
+}
+
+function handleInputBlur() {
+  console.warn('[Gitjump] handleInputBlur called', {
+    skipNextBlurHandler: skipNextBlurHandler.value,
+    panelMode: panelMode.value,
+  });
+  // Skip blur handler if we explicitly blurred during ESC handling
+  if (skipNextBlurHandler.value) {
+    skipNextBlurHandler.value = false;
+    console.warn('[Gitjump] Skipping blur handler');
+    return;
+  }
+  exitFilteredMode();
+}
+
+function exitFilteredMode() {
+  console.warn('[Gitjump] exitFilteredMode called', { currentMode: panelMode.value });
+  if (panelMode.value === 'FILTERED') {
+    panelMode.value = 'NORMAL';
+    console.warn('[Gitjump] Switched to NORMAL mode');
+  }
+}
+
+function exitFilteredModeAndClear() {
+  console.warn('[Gitjump] exitFilteredModeAndClear called', {
+    beforeSearchQuery: searchQuery.value,
+  });
+  searchQuery.value = '';
+  focusedIndex.value = 0;
+  detailFocusIndex.value = 0;
+  focusMode.value = 'repos';
+  collapseExpandedRepo();
+  panelMode.value = 'NORMAL';
+  console.warn('[Gitjump] exitFilteredModeAndClear done', {
+    afterSearchQuery: searchQuery.value,
+    panelMode: panelMode.value,
+  });
+}
+
 async function show() {
-  isVisible.value = true;
   searchQuery.value = ''; // Reset search on open
   focusedIndex.value = 0; // Reset focus to first item
+  panelMode.value = 'NORMAL'; // Start in NORMAL mode
   // Switch to browsing mode for faster polling
   sendMessage(MessageType.SET_QUICK_CHECK_BROWSING);
   // Load data immediately
   await loadReposData();
-  // Focus input field
+  // Auto-focus input so keystrokes go to our panel, not GitHub
+  // But DON'T trigger FILTERED mode until user actually types
   await nextTick();
+  skipNextFocusEvent.value = true; // Skip the initial focus event
   searchInputRef.value?.focus();
-  ensureRepoFocusVisible();
+  console.warn('[Gitjump] Palette shown, input focused, panelMode =', panelMode.value);
 }
 
 function hide() {
-  isVisible.value = false;
+  panelMode.value = 'HIDDEN';
   collapseExpandedRepo();
   // Switch back to idle mode for slower polling
   sendMessage(MessageType.SET_QUICK_CHECK_IDLE);
 }
 
 async function toggle() {
-  if (isVisible.value) {
+  if (panelMode.value !== 'HIDDEN') {
     hide();
   } else {
     await show();
@@ -981,67 +1093,68 @@ function handleBackdropClick(e: MouseEvent) {
 }
 
 function handleKeydown(e: KeyboardEvent) {
-  if (!isVisible.value) return;
+  if (panelMode.value === 'HIDDEN') return;
 
-  const isSearchFocused = document.activeElement === searchInputRef.value;
-
-  console.warn('[Keydown]', e.key, { isSearchFocused, searchQuery: searchQuery.value, activeElement: document.activeElement });
-
+  // ESC key - smart cascade exit
   if (e.key === 'Escape') {
-    // Smart Escape cascade:
-    // 1. If in Tab-focus mode (focus somewhere else) → return to normal mode (focus on list)
-    // 2. If in filtered mode (search has text) → clear search and switch to normal mode
-    // 3. If in normal mode → hide palette
+    console.warn('[Gitjump] ESC pressed', {
+      panelMode: panelMode.value,
+      searchQuery: searchQuery.value,
+      activeElement: document.activeElement?.tagName,
+    });
+    e.preventDefault();
+    e.stopPropagation();
 
-    if (!isSearchFocused) {
-      // Tab-focus mode: return to normal mode (focus on list, not search)
-      console.warn('[Escape] Tab-focus mode -> blur');
-      e.preventDefault();
-      // Blur any focused element and keep focus on list
-      (document.activeElement as HTMLElement)?.blur();
-    } else if (searchQuery.value.trim()) {
-      // Filtered mode: clear search and switch to normal mode
-      console.warn('[Escape] Filtered mode -> clear and blur');
-      e.preventDefault();
-      searchQuery.value = '';
-      focusedIndex.value = 0;
-      detailFocusIndex.value = 0;
-      focusMode.value = 'repos';
-      collapseExpandedRepo();
-      // Blur search input to enter normal mode (focus on list)
+    if (panelMode.value === 'FILTERED') {
+      console.warn('[Gitjump] ESC in FILTERED mode - clearing and returning to NORMAL');
+      // FILTERED mode: clear search, blur input, return to NORMAL mode
+      exitFilteredModeAndClear();
+      skipNextBlurHandler.value = true; // Prevent blur handler from interfering
+      console.warn('[Gitjump] After exitFilteredModeAndClear:', {
+        searchQuery: searchQuery.value,
+        panelMode: panelMode.value,
+      });
       searchInputRef.value?.blur();
-    } else {
-      // Normal mode (search input focused but empty): blur to enter list mode
-      console.warn('[Escape] Empty search -> blur');
-      e.preventDefault();
-      searchInputRef.value?.blur();
+    } else if (panelMode.value === 'NORMAL') {
+      console.warn('[Gitjump] ESC in NORMAL mode - closing palette');
+      // NORMAL mode: close palette
+      hide();
     }
     return;
   }
 
-  // Handle navigation keys in normal mode (when search input is not focused)
-  if (!isSearchFocused) {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      moveFocus('down');
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      moveFocus('up');
-    } else if (e.key === 'ArrowRight') {
-      e.preventDefault();
-      void expandFocusedRepo();
-    } else if (e.key === 'ArrowLeft' && expandedRepoId.value !== null) {
-      e.preventDefault();
-      collapseExpandedRepo();
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      const newTab = e.metaKey || e.ctrlKey;
-      navigateToFocusedTarget(newTab);
-    } else if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
-      // Any printable character: focus search and let it type
-      searchInputRef.value?.focus();
-      // Don't prevent default - let the character be typed
-    }
+  // Arrow keys and Enter work in both NORMAL and FILTERED modes
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    moveFocus('down');
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    moveFocus('up');
+  } else if (e.key === 'ArrowRight') {
+    e.preventDefault();
+    void expandFocusedRepo();
+  } else if (e.key === 'ArrowLeft' && expandedRepoId.value !== null) {
+    e.preventDefault();
+    collapseExpandedRepo();
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    const newTab = e.metaKey || e.ctrlKey;
+    navigateToFocusedTarget(newTab);
+  } else if (
+    panelMode.value === 'NORMAL' &&
+    e.key.length === 1 &&
+    !e.metaKey &&
+    !e.ctrlKey &&
+    !e.altKey
+  ) {
+    // Any printable character in NORMAL mode: focus input and type the character
+    e.preventDefault();
+    e.stopPropagation(); // Prevent GitHub's handlers from seeing this
+    searchInputRef.value?.focus();
+    // Use nextTick to ensure focus completes before appending
+    nextTick(() => {
+      searchQuery.value += e.key;
+    });
   }
 }
 
