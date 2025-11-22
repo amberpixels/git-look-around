@@ -23,6 +23,8 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@playwright/test": "^1.56.1",
+    "@types/node": "^24.10.1",
     "@wxt-dev/module-vue": "^1.0.2",
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",

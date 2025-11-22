@@ -61,7 +61,10 @@ export function usePaletteNavigation<T, S>(options: PaletteNavigationOptions<T, 
         collapse();
       } else {
         const newIndex = Math.min(detailFocusIndex.value + 1, subItems.value.length - 1);
-        console.log('[Gitjump] Navigation: moveNext (details)', { from: detailFocusIndex.value, to: newIndex });
+        console.log('[Gitjump] Navigation: moveNext (details)', {
+          from: detailFocusIndex.value,
+          to: newIndex,
+        });
         detailFocusIndex.value = newIndex;
       }
       return;
@@ -70,7 +73,10 @@ export function usePaletteNavigation<T, S>(options: PaletteNavigationOptions<T, 
     const maxIndex = items.value.length - 1;
     if (maxIndex < 0) return;
     const newIndex = Math.min(focusedIndex.value + 1, maxIndex);
-    console.log('[Gitjump] Navigation: moveNext (repos)', { from: focusedIndex.value, to: newIndex });
+    console.log('[Gitjump] Navigation: moveNext (repos)', {
+      from: focusedIndex.value,
+      to: newIndex,
+    });
     focusedIndex.value = newIndex;
   }
 
@@ -80,14 +86,20 @@ export function usePaletteNavigation<T, S>(options: PaletteNavigationOptions<T, 
         collapse();
       } else {
         const newIndex = Math.max(detailFocusIndex.value - 1, 0);
-        console.log('[Gitjump] Navigation: movePrev (details)', { from: detailFocusIndex.value, to: newIndex });
+        console.log('[Gitjump] Navigation: movePrev (details)', {
+          from: detailFocusIndex.value,
+          to: newIndex,
+        });
         detailFocusIndex.value = newIndex;
       }
       return;
     }
 
     const newIndex = Math.max(focusedIndex.value - 1, 0);
-    console.log('[Gitjump] Navigation: movePrev (repos)', { from: focusedIndex.value, to: newIndex });
+    console.log('[Gitjump] Navigation: movePrev (repos)', {
+      from: focusedIndex.value,
+      to: newIndex,
+    });
     focusedIndex.value = newIndex;
   }
 

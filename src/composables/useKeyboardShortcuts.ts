@@ -1,3 +1,5 @@
+import { onMounted, onUnmounted } from 'vue';
+
 export interface KeyboardActions {
   moveNext: () => void;
   movePrev: () => void;
@@ -11,14 +13,17 @@ export interface KeyboardActions {
 
 export function useKeyboardShortcuts(actions: KeyboardActions) {
   function handleKeydown(e: KeyboardEvent) {
+    console.log('[Gitjump] Composable: handleKeydown', e.key);
     // Ignore if modifier keys are pressed (except for specific combinations we might handle later)
     // But wait, Cmd+Enter is handled in select.
     // So we only ignore if it's a shortcut that shouldn't trigger navigation.
 
     if (e.key === 'Escape') {
       console.log('[Gitjump] Shortcut: Escape');
+      // Always prevent default and stop propagation for Escape to avoid conflicts
       e.preventDefault();
       e.stopPropagation();
+      e.stopImmediatePropagation();
       actions.dismiss();
       return;
     }
@@ -80,14 +85,14 @@ export function useKeyboardShortcuts(actions: KeyboardActions) {
     }
   }
 
-  // Remove auto-attachment to allow consumer to control when it's active
-  // onMounted(() => {
-  //   document.addEventListener('keydown', handleKeydown);
-  // });
+  onMounted(() => {
+    // Use capture phase to ensure we get the event before anyone else
+    window.addEventListener('keydown', handleKeydown, { capture: true });
+  });
 
-  // onUnmounted(() => {
-  //   document.removeEventListener('keydown', handleKeydown);
-  // });
+  onUnmounted(() => {
+    window.removeEventListener('keydown', handleKeydown, { capture: true });
+  });
 
   return {
     handleKeydown,

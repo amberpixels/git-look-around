@@ -8,7 +8,6 @@
           v-model="searchQuery"
           type="text"
           class="search-input"
-          @keydown.capture="handleKeydown"
           @focus="enterFilteredMode"
           @blur="handleInputBlur"
           @input="handleSearchInput"
@@ -859,16 +858,20 @@ function handleInputBlur() {
     console.log('[Gitjump] Skipping blur handler');
     return;
   }
-  exitFilteredMode();
+
+  // If we are in FILTERED mode, we want to stay in it unless explicitly dismissed.
+  // However, if the user clicks outside (backdrop), that will handle the closing.
+  // If the user tabs away, we just lose focus but keep the state.
+  // So we do NOTHING here regarding mode changes.
 }
 
-function exitFilteredMode() {
-  console.log('[Gitjump] State: exitFilteredMode', { currentMode: panelMode.value });
-  if (panelMode.value === 'FILTERED') {
-    panelMode.value = 'NORMAL';
-    console.log('[Gitjump] State Change: FILTERED -> NORMAL');
-  }
-}
+// function exitFilteredMode() {
+//   console.log('[Gitjump] State: exitFilteredMode', { currentMode: panelMode.value });
+//   if (panelMode.value === 'FILTERED') {
+//     panelMode.value = 'NORMAL';
+//     console.log('[Gitjump] State Change: FILTERED -> NORMAL');
+//   }
+// }
 
 function exitFilteredModeAndClear() {
   console.log('[Gitjump] State: exitFilteredModeAndClear', {
@@ -879,7 +882,17 @@ function exitFilteredModeAndClear() {
   detailFocusIndex.value = 0;
   focusMode.value = 'repos';
   collapse();
+
+  // CRITICAL FIX: We must set panelMode to NORMAL *before* refocusing
   panelMode.value = 'NORMAL';
+
+  // Force focus back to input in case it was lost
+  nextTick(() => {
+    // Set flag to skip the next focus event so we don't re-enter FILTERED mode
+    skipNextFocusEvent.value = true;
+    searchInputRef.value?.focus();
+  });
+
   console.log('[Gitjump] State Change: FILTERED -> NORMAL (cleared)', {
     afterSearchQuery: searchQuery.value,
     panelMode: panelMode.value,
@@ -1005,7 +1018,7 @@ function handleBackdropClick(e: MouseEvent) {
   }
 }
 
-const { handleKeydown: shortcutHandler } = useKeyboardShortcuts({
+useKeyboardShortcuts({
   moveNext: () => moveNext(),
   movePrev: () => movePrev(),
   expand: handleExpand,
@@ -1015,7 +1028,8 @@ const { handleKeydown: shortcutHandler } = useKeyboardShortcuts({
     console.log('[Gitjump] Action: dismiss', { panelMode: panelMode.value });
     if (panelMode.value === 'FILTERED') {
       exitFilteredModeAndClear();
-      skipNextBlurHandler.value = true;
+      // We don't need to skip next blur anymore if we don't react to blur by changing mode
+      // skipNextBlurHandler.value = true;
       console.log('[Gitjump] After exitFilteredModeAndClear:', {
         searchQuery: searchQuery.value,
         panelMode: panelMode.value,
@@ -1034,13 +1048,14 @@ const { handleKeydown: shortcutHandler } = useKeyboardShortcuts({
   },
 });
 
-function handleKeydown(e: KeyboardEvent) {
-  if (panelMode.value === 'HIDDEN') return;
-  shortcutHandler(e);
-}
+// function handleKeydown(e: KeyboardEvent) {
+//   console.log('[Gitjump] Component: handleKeydown', e.key, e.type);
+//   if (panelMode.value === 'HIDDEN') return;
+//   shortcutHandler(e);
+// }
 
 // Listen for Escape key globally
-document.addEventListener('keydown', handleKeydown);
+// document.addEventListener('keydown', handleKeydown);
 
 // Expose methods so parent can call them
 defineExpose({
