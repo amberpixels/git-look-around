@@ -331,7 +331,8 @@ import { useKeyboardShortcuts } from '@/src/composables/useKeyboardShortcuts';
 import { MessageType } from '@/src/messages/types';
 import type { RepoRecord, IssueRecord, PullRequestRecord } from '@/src/types';
 
-const searchQuery = ref('');
+const searchQuery = ref(''); // Immediate input value (updates on every keystroke)
+const debouncedSearchQuery = ref(''); // Debounced value (used for filtering to prevent lag)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const searchInputRef = ref<any>(null);
 const isDarkTheme = ref(false);
@@ -341,13 +342,11 @@ const expandedRepoId = ref<number | null>(null);
 type PanelMode = 'NORMAL' | 'FILTERED' | 'HIDDEN';
 const panelMode = ref<PanelMode>('HIDDEN');
 
-// Flag to skip blur handler (used when we explicitly blur during ESC)
-const skipNextBlurHandler = ref(false);
-
 // Flag to skip initial focus event (when we programmatically focus on open)
 const skipNextFocusEvent = ref(false);
 
-const normalizedSearchQuery = computed(() => searchQuery.value.trim().toLowerCase());
+// Use debounced query for filtering to keep typing blazingly fast
+const normalizedSearchQuery = computed(() => debouncedSearchQuery.value.trim().toLowerCase());
 
 type RepoDetailData = {
   issues: IssueRecord[];
@@ -760,6 +759,26 @@ watch(expandedDetailItems, (items) => {
   }
 });
 
+// Debounce search query to decouple typing from filtering
+let debounceTimeout: number | null = null;
+watch(searchQuery, (newQuery) => {
+  // Clear existing timeout
+  if (debounceTimeout) {
+    window.clearTimeout(debounceTimeout);
+  }
+
+  // Immediate update for empty query to instantly show all repos when clearing
+  if (!newQuery.trim()) {
+    debouncedSearchQuery.value = '';
+    return;
+  }
+
+  // Debounce non-empty queries for blazingly fast typing (150ms feels instant)
+  debounceTimeout = window.setTimeout(() => {
+    debouncedSearchQuery.value = newQuery;
+  }, 150);
+});
+
 watch(normalizedSearchQuery, (query) => {
   if (!query) return;
   // Only preload details for visible filtered repos (not all indexed repos)
@@ -942,36 +961,23 @@ function enterFilteredMode() {
 }
 
 function handleInputBlur() {
-  console.log('[Gitjump] State: handleInputBlur', {
-    skipNextBlurHandler: skipNextBlurHandler.value,
-    panelMode: panelMode.value,
-  });
-  // Skip blur handler if we explicitly blurred during ESC handling
-  if (skipNextBlurHandler.value) {
-    skipNextBlurHandler.value = false;
-    console.log('[Gitjump] Skipping blur handler');
-    return;
-  }
-
-  // If we are in FILTERED mode, we want to stay in it unless explicitly dismissed.
-  // However, if the user clicks outside (backdrop), that will handle the closing.
-  // If the user tabs away, we just lose focus but keep the state.
-  // So we do NOTHING here regarding mode changes.
+  // Input blur is handled by other mechanisms (backdrop click, ESC key)
+  // We intentionally do nothing here to keep the panel state stable
 }
-
-// function exitFilteredMode() {
-//   console.log('[Gitjump] State: exitFilteredMode', { currentMode: panelMode.value });
-//   if (panelMode.value === 'FILTERED') {
-//     panelMode.value = 'NORMAL';
-//     console.log('[Gitjump] State Change: FILTERED -> NORMAL');
-//   }
-// }
 
 function exitFilteredModeAndClear() {
   console.log('[Gitjump] State: exitFilteredModeAndClear', {
     beforeSearchQuery: searchQuery.value,
   });
+
+  // Clear debounce timeout if pending
+  if (debounceTimeout) {
+    window.clearTimeout(debounceTimeout);
+    debounceTimeout = null;
+  }
+
   searchQuery.value = '';
+  debouncedSearchQuery.value = '';
   focusedIndex.value = 0;
   detailFocusIndex.value = 0;
   focusMode.value = 'repos';
@@ -995,7 +1001,15 @@ function exitFilteredModeAndClear() {
 
 async function show() {
   console.log('[Gitjump] State: show');
+
+  // Clear any pending debounce
+  if (debounceTimeout) {
+    window.clearTimeout(debounceTimeout);
+    debounceTimeout = null;
+  }
+
   searchQuery.value = ''; // Reset search on open
+  debouncedSearchQuery.value = '';
   focusedIndex.value = 0; // Reset focus to first item
   panelMode.value = 'NORMAL'; // Start in NORMAL mode
   // Switch to browsing mode for faster polling
@@ -1102,6 +1116,10 @@ onMounted(async () => {
   onUnmounted(() => {
     mediaQuery.removeEventListener('change', handleThemeChange);
     observer.disconnect();
+    // Clear debounce timeout
+    if (debounceTimeout) {
+      window.clearTimeout(debounceTimeout);
+    }
   });
 });
 
@@ -1122,8 +1140,6 @@ useKeyboardShortcuts({
     console.log('[Gitjump] Action: dismiss', { panelMode: panelMode.value });
     if (panelMode.value === 'FILTERED') {
       exitFilteredModeAndClear();
-      // We don't need to skip next blur anymore if we don't react to blur by changing mode
-      // skipNextBlurHandler.value = true;
       console.log('[Gitjump] After exitFilteredModeAndClear:', {
         searchQuery: searchQuery.value,
         panelMode: panelMode.value,
@@ -1141,15 +1157,6 @@ useKeyboardShortcuts({
     });
   },
 });
-
-// function handleKeydown(e: KeyboardEvent) {
-//   console.log('[Gitjump] Component: handleKeydown', e.key, e.type);
-//   if (panelMode.value === 'HIDDEN') return;
-//   shortcutHandler(e);
-// }
-
-// Listen for Escape key globally
-// document.addEventListener('keydown', handleKeydown);
 
 // Expose methods so parent can call them
 defineExpose({
