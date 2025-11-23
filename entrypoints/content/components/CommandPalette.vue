@@ -28,23 +28,46 @@
             :key="repo.id"
             :ref="(el) => setRepoItemRef(repo.id, el)"
             class="repo-item"
-            :class="{ focused: isRepoFocused(repo) }"
+            :class="{ focused: isRepoFocused(repo), 'has-details': shouldShowRepoDetails(repo) }"
             :title="repo.description || ''"
           >
             <div class="repo-header">
               <div class="repo-name-section">
+                <!-- Private repo icon -->
                 <svg
-                  v-if="repo.fork"
+                  v-if="repo.private"
+                  class="repo-type-icon private"
+                  viewBox="0 0 16 16"
+                  width="16"
+                  height="16"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M4 4a4 4 0 0 1 8 0v2h.25c.966 0 1.75.784 1.75 1.75v5.5A1.75 1.75 0 0 1 12.25 15h-8.5A1.75 1.75 0 0 1 2 13.25v-5.5C2 6.784 2.784 6 3.75 6H4Zm8.25 3.5h-8.5a.25.25 0 0 0-.25.25v5.5c0 .138.112.25.25.25h8.5a.25.25 0 0 0 .25-.25v-5.5a.25.25 0 0 0-.25-.25ZM10.5 6V4a2.5 2.5 0 1 0-5 0v2Z"
+                  ></path>
+                </svg>
+                <!-- Fork icon -->
+                <svg
+                  v-else-if="repo.fork"
                   class="repo-type-icon fork"
                   viewBox="0 0 16 16"
-                  width="14"
-                  height="14"
+                  width="16"
+                  height="16"
+                  aria-hidden="true"
                 >
                   <path
                     d="M5 5.372v.878c0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75v-.878a2.25 2.25 0 1 1 1.5 0v.878a2.25 2.25 0 0 1-2.25 2.25h-1.5v2.128a2.251 2.251 0 1 1-1.5 0V8.5h-1.5A2.25 2.25 0 0 1 3.5 6.25v-.878a2.25 2.25 0 1 1 1.5 0ZM5 3.25a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Zm6.75.75a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm-3 8.75a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Z"
                   ></path>
                 </svg>
-                <svg v-else class="repo-type-icon owner" viewBox="0 0 16 16" width="14" height="14">
+                <!-- Public repo icon -->
+                <svg
+                  v-else
+                  class="repo-type-icon public"
+                  viewBox="0 0 16 16"
+                  width="16"
+                  height="16"
+                  aria-hidden="true"
+                >
                   <path
                     d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8ZM5 12.25a.25.25 0 0 1 .25-.25h3.5a.25.25 0 0 1 .25.25v3.25a.25.25 0 0 1-.4.2l-1.45-1.087a.249.249 0 0 0-.3 0L5.4 15.7a.25.25 0 0 1-.4-.2Z"
                   ></path>
@@ -110,25 +133,67 @@
                     closed: item.state === 'closed',
                   }"
                 >
+                  <!-- PR: Draft -->
                   <svg
-                    v-if="item.type === 'pr'"
-                    class="repo-details-icon pr"
-                    :class="item.state"
+                    v-if="item.type === 'pr' && item.draft"
+                    class="repo-details-icon pr draft"
                     viewBox="0 0 16 16"
                     width="14"
                     height="14"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M3.25 1A2.25 2.25 0 0 1 4 5.372v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.251 2.251 0 0 1 3.25 1Zm9.5 14a2.25 2.25 0 1 1 0-4.5 2.25 2.25 0 0 1 0 4.5ZM2.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0ZM3.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm9.5 0a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM14 7.5a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Zm0-4.25a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Z"
+                    ></path>
+                  </svg>
+                  <!-- PR: Merged (closed) -->
+                  <svg
+                    v-else-if="item.type === 'pr' && item.merged"
+                    class="repo-details-icon pr merged"
+                    viewBox="0 0 16 16"
+                    width="14"
+                    height="14"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5-4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 3.25a.75.75 0 1 0 0 .005V3.25Z"
+                    ></path>
+                  </svg>
+                  <!-- PR: Open -->
+                  <svg
+                    v-else-if="item.type === 'pr' && item.state === 'open'"
+                    class="repo-details-icon pr open"
+                    viewBox="0 0 16 16"
+                    width="14"
+                    height="14"
+                    aria-hidden="true"
                   >
                     <path
                       d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"
                     ></path>
                   </svg>
+                  <!-- PR: Closed (not merged) -->
                   <svg
-                    v-else
+                    v-else-if="item.type === 'pr' && item.state === 'closed'"
+                    class="repo-details-icon pr closed"
+                    viewBox="0 0 16 16"
+                    width="14"
+                    height="14"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M3.25 1A2.25 2.25 0 0 1 4 5.372v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.251 2.251 0 0 1 3.25 1Zm9.5 5.5a.75.75 0 0 1 .75.75v3.378a2.251 2.251 0 1 1-1.5 0V7.25a.75.75 0 0 1 .75-.75Zm-2.03-5.273a.75.75 0 0 1 1.06 0l.97.97.97-.97a.748.748 0 0 1 1.265.332.75.75 0 0 1-.205.729l-.97.97.97.97a.751.751 0 0 1-.018 1.042.751.751 0 0 1-1.042.018l-.97-.97-.97.97a.749.749 0 0 1-1.275-.326.749.749 0 0 1 .215-.734l.97-.97-.97-.97a.75.75 0 0 1 0-1.06ZM2.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0ZM3.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm9.5 0a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z"
+                    ></path>
+                  </svg>
+                  <!-- Issue icons -->
+                  <svg
+                    v-else-if="item.type === 'issue'"
                     class="repo-details-icon issue"
                     :class="item.state"
                     viewBox="0 0 16 16"
                     width="14"
                     height="14"
+                    aria-hidden="true"
                   >
                     <path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"></path>
                     <path
@@ -167,23 +232,40 @@
             >
               <div class="repo-header">
                 <div class="repo-name-section">
+                  <!-- Private repo icon -->
                   <svg
-                    v-if="repo.fork"
+                    v-if="repo.private"
+                    class="repo-type-icon private"
+                    viewBox="0 0 16 16"
+                    width="16"
+                    height="16"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M4 4a4 4 0 0 1 8 0v2h.25c.966 0 1.75.784 1.75 1.75v5.5A1.75 1.75 0 0 1 12.25 15h-8.5A1.75 1.75 0 0 1 2 13.25v-5.5C2 6.784 2.784 6 3.75 6H4Zm8.25 3.5h-8.5a.25.25 0 0 0-.25.25v5.5c0 .138.112.25.25.25h8.5a.25.25 0 0 0 .25-.25v-5.5a.25.25 0 0 0-.25-.25ZM10.5 6V4a2.5 2.5 0 1 0-5 0v2Z"
+                    ></path>
+                  </svg>
+                  <!-- Fork icon -->
+                  <svg
+                    v-else-if="repo.fork"
                     class="repo-type-icon fork"
                     viewBox="0 0 16 16"
-                    width="14"
-                    height="14"
+                    width="16"
+                    height="16"
+                    aria-hidden="true"
                   >
                     <path
                       d="M5 5.372v.878c0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75v-.878a2.25 2.25 0 1 1 1.5 0v.878a2.25 2.25 0 0 1-2.25 2.25h-1.5v2.128a2.251 2.251 0 1 1-1.5 0V8.5h-1.5A2.25 2.25 0 0 1 3.5 6.25v-.878a2.25 2.25 0 1 1 1.5 0ZM5 3.25a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Zm6.75.75a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm-3 8.75a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Z"
                     ></path>
                   </svg>
+                  <!-- Public repo icon -->
                   <svg
                     v-else
-                    class="repo-type-icon owner"
+                    class="repo-type-icon public"
                     viewBox="0 0 16 16"
-                    width="14"
-                    height="14"
+                    width="16"
+                    height="16"
+                    aria-hidden="true"
                   >
                     <path
                       d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8ZM5 12.25a.25.25 0 0 1 .25-.25h3.5a.25.25 0 0 1 .25.25v3.25a.25.25 0 0 1-.4.2l-1.45-1.087a.249.249 0 0 0-.3 0L5.4 15.7a.25.25 0 0 1-.4-.2Z"
@@ -285,6 +367,9 @@ type RepoDetailItem = {
   };
   last_visited_at?: number | null;
   updated_at_ts?: number | null;
+  // PR-specific fields
+  draft?: boolean;
+  merged?: boolean;
 };
 
 const repoDetailData = ref<Record<number, RepoDetailData>>({});
@@ -521,7 +606,7 @@ function toRepoDetailItem(
   record: IssueRecord | PullRequestRecord,
   type: 'issue' | 'pr',
 ): RepoDetailItem {
-  return {
+  const item: RepoDetailItem = {
     type,
     id: record.id,
     title: record.title,
@@ -532,6 +617,15 @@ function toRepoDetailItem(
     last_visited_at: record.last_visited_at ?? null,
     updated_at_ts: record.updated_at ? new Date(record.updated_at).getTime() : null,
   };
+
+  // Add PR-specific fields
+  if (type === 'pr') {
+    const pr = record as PullRequestRecord;
+    item.draft = pr.draft;
+    item.merged = pr.merged;
+  }
+
+  return item;
 }
 
 function sortDetailItems(items: RepoDetailItem[]): RepoDetailItem[] {
@@ -1072,7 +1166,7 @@ defineExpose({
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.7);
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -1081,8 +1175,9 @@ defineExpose({
 }
 
 .gitjump-popup {
-  background: white;
-  border-radius: 8px;
+  background: #f6f8fa;
+  border: 1px solid #d0d7de;
+  border-radius: 12px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   max-width: 600px;
   width: 100%;
@@ -1090,27 +1185,31 @@ defineExpose({
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }
 
 /* (1) Search bar - styled as "zeroth row" */
 .search-bar {
   padding: 0;
-  border-bottom: 1px solid #e1e4e8;
+  border-bottom: 1px solid #d0d7de;
   background: white;
 }
 
 .search-input {
   width: 100%;
-  padding: 8px 12px;
+  padding: 10px 12px;
   padding-left: 32px; /* Align with repo names (12px base + 14px icon + 6px gap) */
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 400;
   border: none;
   outline: none;
   font-family: inherit;
   background: transparent;
-  color: #0366d6;
+  color: #24292f;
+}
+
+.search-input::placeholder {
+  color: #57606a;
 }
 
 /* (2) Main content area */
@@ -1192,8 +1291,13 @@ defineExpose({
 }
 
 .repo-item {
-  padding: 8px 12px;
-  border-bottom: 1px solid #e1e4e8;
+  padding: 6px 12px;
+  border-bottom: 1px solid #d0d7de;
+}
+
+.repo-item.has-details {
+  padding-bottom: 0;
+  border-bottom: none;
 }
 
 .repo-item:last-child {
@@ -1202,7 +1306,12 @@ defineExpose({
 
 .repo-item.focused {
   background: #ddf4ff;
-  box-shadow: inset 3px 0 0 #0969da;
+  border-left: 2px solid #0969da;
+  padding-left: 10px;
+}
+
+.repo-item.focused.has-details {
+  padding-left: 10px;
 }
 
 .repo-header {
@@ -1226,17 +1335,18 @@ defineExpose({
   fill: currentColor;
 }
 
-.repo-type-icon.fork {
-  color: #656d76;
+.repo-type-icon.private {
+  color: #bf8700;
 }
 
-.repo-type-icon.owner {
-  color: #0969da;
+.repo-type-icon.fork,
+.repo-type-icon.public {
+  color: #57606a;
 }
 
 .repo-link {
-  font-weight: 600;
-  color: #0366d6;
+  font-weight: 400;
+  color: #24292f;
   text-decoration: none;
   font-size: 14px;
   flex: 1;
@@ -1247,7 +1357,7 @@ defineExpose({
 }
 
 .repo-link:hover {
-  text-decoration: underline;
+  text-decoration: none;
 }
 
 .repo-desc {
@@ -1272,25 +1382,24 @@ defineExpose({
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: #586069;
+  color: #57606a;
   font-weight: 500;
 }
 
 .count-item-link {
-  background: #ecfdf3;
-  border: 1px solid #a7f3d0;
+  border: 1px solid #d0d7de;
   border-radius: 6px;
-  padding: 2px 8px;
+  padding: 2px 6px;
   cursor: pointer;
   transition:
-    background-color 0.2s,
-    border-color 0.2s;
+    background-color 0.15s,
+    border-color 0.15s;
   text-decoration: none;
 }
 
 .count-item-link:hover {
-  background: #d1fae5;
-  border-color: #34d399;
+  background: #f6f8fa;
+  border-color: #57606a;
   text-decoration: none;
 }
 
@@ -1308,20 +1417,21 @@ defineExpose({
 }
 
 .repo-details {
-  margin-top: 8px;
+  margin-top: 0;
+  padding-top: 6px;
   padding-left: 0;
   background: #f6f8fa;
   margin-left: -12px;
   margin-right: -12px;
   padding-left: 12px;
   padding-right: 12px;
-  padding-bottom: 8px;
+  padding-bottom: 0;
 }
 
 .repo-details-status {
   font-size: 12px;
   color: #57606a;
-  padding: 6px 0;
+  padding: 4px 0;
 }
 
 .repo-details-status.error {
@@ -1330,8 +1440,8 @@ defineExpose({
 
 .repo-details-list {
   list-style: none;
-  margin: 4px 0 0;
-  padding: 0;
+  margin: 2px 0 0;
+  padding: 0 0 0 0;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -1344,16 +1454,21 @@ defineExpose({
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 12px;
+  padding: 3px 8px;
   border: none;
   border-radius: 0;
   background: transparent;
-  transition: background-color 0.2s;
+  transition: background-color 0.1s;
+}
+
+.repo-details-row:last-child {
+  padding-bottom: 6px;
 }
 
 .repo-details-row.focused {
   background: #ddf4ff;
-  box-shadow: inset 3px 0 0 #0969da;
+  border-left: 2px solid #0969da;
+  padding-left: 6px;
 }
 
 /* Ensure closed items are still clearly visible when focused */
@@ -1375,8 +1490,16 @@ defineExpose({
   color: #1a7f37;
 }
 
+.repo-details-icon.pr.draft {
+  color: #57606a;
+}
+
+.repo-details-icon.pr.merged {
+  color: #8250df;
+}
+
 .repo-details-icon.pr.closed {
-  color: #8b949e;
+  color: #d1242f;
 }
 
 .repo-details-icon.issue.open {
@@ -1437,7 +1560,7 @@ defineExpose({
 }
 
 .dark-theme .repo-details {
-  background: #0d1117;
+  background: #22272e;
 }
 
 .dark-theme .repo-details-row {
@@ -1445,12 +1568,12 @@ defineExpose({
 }
 
 .dark-theme .repo-details-row.focused {
-  background: #1c3a5e;
-  box-shadow: inset 3px 0 0 #58a6ff;
+  background: #2d3845;
+  border-left-color: #539bf5;
 }
 
 .dark-theme .repo-details-row.closed.focused {
-  background: #1c3a5e;
+  background: #2d3845;
 }
 
 .dark-theme .repo-details-row.closed {
@@ -1458,27 +1581,39 @@ defineExpose({
 }
 
 .dark-theme .repo-details-icon.pr.open {
-  color: #3fb950;
+  color: #56d364;
+}
+
+.dark-theme .repo-details-icon.pr.draft {
+  color: #768390;
+}
+
+.dark-theme .repo-details-icon.pr.merged {
+  color: #a371f7;
+}
+
+.dark-theme .repo-details-icon.pr.closed {
+  color: #f85149;
 }
 
 .dark-theme .repo-details-icon.issue.open {
-  color: #58a6ff;
+  color: #539bf5;
 }
 
 .dark-theme .repo-details-number {
-  color: #8b949e;
+  color: #768390;
 }
 
 .dark-theme .repo-details-link {
-  color: #dfe3ec;
+  color: #adbac7;
 }
 
 .dark-theme .repo-details-row.closed .repo-details-link {
-  color: #8b949e;
+  color: #768390;
 }
 
 .dark-theme .repo-details-row.closed .repo-details-number {
-  color: #6e7681;
+  color: #636e7b;
 }
 
 /* (3) Status bar at bottom */
@@ -1571,22 +1706,27 @@ defineExpose({
 
 /* Dark theme overrides */
 .gitjump-popup.dark-theme {
-  background: #0d1117;
+  background: #1c2128;
+  border-color: #444c56;
   color: #e6edf3;
 }
 
 .dark-theme .search-bar {
-  background: #0d1117;
-  border-bottom-color: #30363d;
+  background: #1c2128;
+  border-bottom-color: #444c56;
 }
 
 .dark-theme .search-input {
   background: transparent;
-  color: #58a6ff;
+  color: #adbac7;
+}
+
+.dark-theme .search-input::placeholder {
+  color: #768390;
 }
 
 .dark-theme .status {
-  color: #7d8590;
+  color: #768390;
 }
 
 .dark-theme .status.error {
@@ -1594,73 +1734,83 @@ defineExpose({
 }
 
 .dark-theme .status.empty-state {
-  color: #7d8590;
+  color: #768390;
 }
 
 .dark-theme .non-indexed-separator {
-  background: #161b22;
-  border-top-color: #30363d;
-  border-bottom-color: #30363d;
-  color: #7d8590;
+  background: #22272e;
+  border-top-color: #444c56;
+  border-bottom-color: #444c56;
+  color: #768390;
 }
 
 .dark-theme .repo-item {
-  border-bottom-color: #21262d;
+  border-bottom-color: #373e47;
 }
 
 .dark-theme .repo-item.focused {
-  background: #1c3a5e;
-  box-shadow: inset 3px 0 0 #58a6ff;
+  background: #2d3845;
+  border-left-color: #539bf5;
 }
 
 .dark-theme .repo-link {
-  color: #58a6ff;
+  color: #adbac7;
 }
 
 .dark-theme .non-indexed-repos .repo-link {
-  color: #7d8590;
+  color: #768390;
 }
 
 .dark-theme .add-to-index-btn {
-  border-color: #30363d;
-  color: #58a6ff;
+  border-color: #444c56;
+  color: #539bf5;
 }
 
 .dark-theme .add-to-index-btn:hover {
-  background: #161b22;
-  border-color: #58a6ff;
+  background: #22272e;
+  border-color: #539bf5;
 }
 
 .dark-theme .repo-desc {
-  color: #7d8590;
+  color: #768390;
 }
 
 .dark-theme .count-item {
-  color: #7d8590;
+  color: #768390;
 }
 
 .dark-theme .count-item.issues {
-  color: #58a6ff;
+  color: #539bf5;
 }
 
 .dark-theme .count-item.prs {
-  color: #3fb950;
+  color: #56d364;
+}
+
+.dark-theme .count-item-link {
+  border-color: #444c56;
+}
+
+.dark-theme .count-item-link:hover {
+  background: #2d3845;
+  border-color: #768390;
 }
 
 .dark-theme .status-bar {
-  background: #161b22;
-  border-top-color: #30363d;
+  background: #22272e;
+  border-top-color: #444c56;
 }
 
 .dark-theme .status-text {
-  color: #7d8590;
+  color: #768390;
 }
 
-.dark-theme .repo-type-icon.fork {
-  color: #7d8590;
+.dark-theme .repo-type-icon.private {
+  color: #d29922;
 }
 
-.dark-theme .repo-type-icon.owner {
-  color: #58a6ff;
+.dark-theme .repo-type-icon.fork,
+.dark-theme .repo-type-icon.public {
+  color: #768390;
 }
 </style>

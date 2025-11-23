@@ -2,7 +2,7 @@
   "name": "gitjump",
   "description": "GitHub fuzzy finder browser extension",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.0.1",
   "type": "module",
   "scripts": {
     "dev": "NODE_OPTIONS='--no-webstorage' wxt",

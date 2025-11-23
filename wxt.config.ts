@@ -6,7 +6,7 @@ export default defineConfig({
   manifest: {
     name: 'Gitjump',
     description: 'GitHub fuzzy finder for quick navigation to repos, PRs, and issues',
-    version: '0.1.0',
+    version: '0.0.1',
     permissions: ['storage'],
     commands: {
       'toggle-overlay': {
