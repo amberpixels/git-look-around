@@ -1,11 +1,12 @@
 <script lang="ts" setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { isAuthenticated as checkAuth } from '@/src/storage/chrome';
 import { useSyncStatus } from '@/src/composables/useSyncStatus';
 import { useRateLimit } from '@/src/composables/useRateLimit';
 
 const isAuthenticated = ref<boolean | null>(null);
 const loading = ref(true);
+const isDarkTheme = ref(false);
 
 // Use composables for data fetching
 const { status: syncStatus } = useSyncStatus(5000); // Poll every 5 seconds
@@ -46,7 +47,23 @@ onMounted(async () => {
   } finally {
     loading.value = false;
   }
+
+  // Detect dark theme
+  updateTheme();
+
+  // Listen for theme changes
+  const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  const handleThemeChange = () => updateTheme();
+  mediaQuery.addEventListener('change', handleThemeChange);
+
+  onUnmounted(() => {
+    mediaQuery.removeEventListener('change', handleThemeChange);
+  });
 });
+
+function updateTheme() {
+  isDarkTheme.value = window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
 
 function openOptions() {
   browser.runtime.openOptionsPage();
@@ -60,7 +77,7 @@ function getRateLimitResetTime(): string {
 </script>
 
 <template>
-  <div class="popup">
+  <div class="popup" :class="{ 'dark-theme': isDarkTheme }">
     <div class="header">
       <h1>Gitjump</h1>
       <p class="subtitle">GitHub Fuzzy Finder</p>
@@ -319,5 +336,104 @@ function getRateLimitResetTime(): string {
   font-size: 11px;
   color: #6a737d;
   margin-top: 4px;
+}
+
+/* Dark theme overrides */
+.popup.dark-theme {
+  background: #1c2128;
+  color: #adbac7;
+}
+
+.dark-theme .header h1 {
+  color: #539bf5;
+}
+
+.dark-theme .subtitle {
+  color: #768390;
+}
+
+.dark-theme .status {
+  color: #768390;
+}
+
+.dark-theme .status-badge.success {
+  background: #1a372a;
+  color: #56d364;
+}
+
+.dark-theme .status-badge.error {
+  background: #3c1618;
+  color: #f85149;
+}
+
+.dark-theme .instructions p {
+  color: #adbac7;
+}
+
+.dark-theme .instructions kbd {
+  color: #adbac7;
+  background-color: #22272e;
+  border: 1px solid #444c56;
+  box-shadow: inset 0 -1px 0 #373e47;
+}
+
+.dark-theme .hint {
+  color: #768390;
+}
+
+.dark-theme .message {
+  color: #768390;
+}
+
+.dark-theme .button {
+  background-color: #1f6feb;
+}
+
+.dark-theme .button:hover {
+  background-color: #388bfd;
+}
+
+.dark-theme .button:active {
+  background-color: #1f6feb;
+}
+
+.dark-theme .footer {
+  border-top: 1px solid #373e47;
+}
+
+.dark-theme .link {
+  color: #539bf5;
+}
+
+.dark-theme .info-label {
+  color: #768390;
+}
+
+.dark-theme .info-value {
+  color: #adbac7;
+}
+
+.dark-theme .rate-limit-bar {
+  background: #373e47;
+}
+
+.dark-theme .status-good {
+  color: #56d364;
+}
+
+.dark-theme .status-warning {
+  color: #d29922;
+}
+
+.dark-theme .status-critical {
+  color: #f85149;
+}
+
+.dark-theme .reset-time {
+  color: #768390;
+}
+
+.dark-theme .rate-limit-stats {
+  color: #768390;
 }
 </style>
