@@ -532,14 +532,6 @@ async function runQuickCheckOnce(): Promise<void> {
       // Check if any PR has been updated since our last fetch
       const storedFetchedAt = storedRepo.last_fetched_at || 0;
 
-      // Debug: Log comparison for first repo in the list
-      if (recentPRs.length > 0) {
-        const firstPR = recentPRs[0];
-        const firstPRUpdatedAt = firstPR.updated_at ? new Date(firstPR.updated_at).getTime() : 0;
-        console.warn(
-          `[QuickCheck] ${apiRepo.full_name}: comparing PR#${firstPR.number} updated_at=${new Date(firstPRUpdatedAt).toISOString()} vs repo.last_fetched_at=${new Date(storedFetchedAt).toISOString()}`,
-        );
-      }
       const updatedPRs = recentPRs.filter((pr) => {
         const prUpdatedAt = pr.updated_at ? new Date(pr.updated_at).getTime() : 0;
         return prUpdatedAt > storedFetchedAt;
