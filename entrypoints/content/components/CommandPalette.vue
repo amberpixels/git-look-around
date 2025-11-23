@@ -330,6 +330,7 @@ import { usePaletteNavigation } from '@/src/composables/usePaletteNavigation';
 import { useKeyboardShortcuts } from '@/src/composables/useKeyboardShortcuts';
 import { MessageType } from '@/src/messages/types';
 import type { RepoRecord, IssueRecord, PullRequestRecord } from '@/src/types';
+import { getCachedTheme, setCachedTheme, type ThemeMode } from '@/src/storage/chrome';
 
 const searchQuery = ref(''); // Immediate input value (updates on every keystroke)
 const debouncedSearchQuery = ref(''); // Debounced value (used for filtering to prevent lag)
@@ -1059,7 +1060,7 @@ function getPullRequestsUrl(repo: RepoRecord): string {
 }
 
 /**
- * Detect dark theme preference
+ * Detect dark theme preference from DOM
  * Checks both OS-level and GitHub's theme
  */
 function detectDarkTheme(): boolean {
@@ -1086,19 +1087,39 @@ function detectDarkTheme(): boolean {
 }
 
 /**
- * Update dark theme state
+ * Update theme state and persist to cache
+ * This ensures next page load is instant
  */
-function updateTheme() {
-  isDarkTheme.value = detectDarkTheme();
+async function updateTheme() {
+  const newTheme = detectDarkTheme();
+  const newThemeMode: ThemeMode = newTheme ? 'dark' : 'light';
+
+  // Only update if changed to avoid unnecessary re-renders
+  if (isDarkTheme.value !== newTheme) {
+    isDarkTheme.value = newTheme;
+  }
+
+  // Persist to cache for next page load (non-blocking)
+  setCachedTheme(newThemeMode).catch((error) => {
+    console.error('[CommandPalette] Failed to cache theme:', error);
+  });
 }
 
 // Auto-load data when component mounts (content script loads)
 onMounted(async () => {
+  // CRITICAL: Apply cached theme FIRST for instant rendering (no flash)
+  // This happens before any DOM checks or async operations
+  const cachedTheme = await getCachedTheme();
+  if (cachedTheme) {
+    isDarkTheme.value = cachedTheme === 'dark';
+  }
+
   // Silently load data in background so it's ready when user opens overlay
   await loadReposData();
 
-  // Detect initial theme
-  updateTheme();
+  // Detect actual theme from DOM and update cache if different
+  // This happens after initial render, so no flash occurs
+  await updateTheme();
 
   // Listen for OS-level theme changes
   const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
