@@ -11,12 +11,24 @@ export interface KeyboardActions {
   onType: (char: string) => void;
 }
 
-export function useKeyboardShortcuts(actions: KeyboardActions) {
+export function useKeyboardShortcuts(actions: KeyboardActions, isVisible: () => boolean) {
   function handleKeydown(e: KeyboardEvent) {
+    // CRITICAL: Only handle keyboard events when the palette is visible
+    if (!isVisible()) {
+      return;
+    }
+
     console.log('[Gitjump] Composable: handleKeydown', e.key);
-    // Ignore if modifier keys are pressed (except for specific combinations we might handle later)
-    // But wait, Cmd+Enter is handled in select.
-    // So we only ignore if it's a shortcut that shouldn't trigger navigation.
+
+    // Check if user is typing in an input field, textarea, or contenteditable element
+    const target = e.target as HTMLElement;
+    const isTypingInField =
+      target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+
+    // If user is typing in a field, only allow Escape to close the palette
+    if (isTypingInField && e.key !== 'Escape') {
+      return;
+    }
 
     if (e.key === 'Escape') {
       console.log('[Gitjump] Shortcut: Escape');
@@ -69,14 +81,8 @@ export function useKeyboardShortcuts(actions: KeyboardActions) {
       return;
     }
 
-    // Typing handling (only if no modifiers)
-    if (
-      e.key.length === 1 &&
-      !e.metaKey &&
-      !e.ctrlKey &&
-      !e.altKey &&
-      document.activeElement?.tagName !== 'INPUT' // Don't capture if already typing in input
-    ) {
+    // Typing handling (only if no modifiers and not in a field)
+    if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey && !isTypingInField) {
       console.log('[Gitjump] Shortcut: Typing', e.key);
       e.preventDefault();
       e.stopPropagation();

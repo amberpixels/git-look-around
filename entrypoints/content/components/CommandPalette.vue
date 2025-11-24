@@ -929,33 +929,36 @@ function handleBackdropClick(e: MouseEvent) {
   }
 }
 
-useKeyboardShortcuts({
-  moveNext: () => moveNext(),
-  movePrev: () => movePrev(),
-  expand: () => {}, // No longer used in flat list
-  collapse: () => {}, // No longer used in flat list
-  select: (newTab) => navigateToFocusedTarget(newTab),
-  dismiss: () => {
-    console.log('[Gitjump] Action: dismiss', { panelMode: panelMode.value });
-    if (panelMode.value === 'FILTERED') {
-      exitFilteredModeAndClear();
-      console.log('[Gitjump] After exitFilteredModeAndClear:', {
-        searchQuery: searchQuery.value,
-        panelMode: panelMode.value,
+useKeyboardShortcuts(
+  {
+    moveNext: () => moveNext(),
+    movePrev: () => movePrev(),
+    expand: () => {}, // No longer used in flat list
+    collapse: () => {}, // No longer used in flat list
+    select: (newTab) => navigateToFocusedTarget(newTab),
+    dismiss: () => {
+      console.log('[Gitjump] Action: dismiss', { panelMode: panelMode.value });
+      if (panelMode.value === 'FILTERED') {
+        exitFilteredModeAndClear();
+        console.log('[Gitjump] After exitFilteredModeAndClear:', {
+          searchQuery: searchQuery.value,
+          panelMode: panelMode.value,
+        });
+        searchInputRef.value?.blur();
+      } else {
+        hide();
+      }
+    },
+    focusInput: () => searchInputRef.value?.focus(),
+    onType: (char) => {
+      searchInputRef.value?.focus();
+      nextTick(() => {
+        searchQuery.value += char;
       });
-      searchInputRef.value?.blur();
-    } else {
-      hide();
-    }
+    },
   },
-  focusInput: () => searchInputRef.value?.focus(),
-  onType: (char) => {
-    searchInputRef.value?.focus();
-    nextTick(() => {
-      searchQuery.value += char;
-    });
-  },
-});
+  () => panelMode.value !== 'HIDDEN',
+);
 
 // Expose methods so parent can call them
 defineExpose({
