@@ -22,7 +22,7 @@ import {
 } from '@/src/storage/db';
 
 import { getSyncPreferences } from '@/src/storage/chrome';
-import { isUserContributor } from '@/src/api/contributors';
+import { isUserContributor, getLastContributionDate } from '@/src/api/contributors';
 import type { IssueRecord, PullRequestRecord } from '@/src/types';
 
 // Repos with last update older than 6 months are NOT indexed by default
@@ -222,9 +222,15 @@ export async function runSync(): Promise<void> {
       allRepos.map(async (repo) => {
         const [owner, repoName] = repo.full_name.split('/');
         let meContributing = false;
+        let lastContributedAt: string | null = null;
 
         try {
           meContributing = await isUserContributor(owner, repoName, accountLogin);
+
+          // If user is a contributor, get the date of their last contribution
+          if (meContributing) {
+            lastContributedAt = await getLastContributionDate(owner, repoName, accountLogin);
+          }
         } catch (err) {
           console.warn(`[Sync] Could not check contributor status for ${repo.full_name}:`, err);
         }
@@ -244,6 +250,7 @@ export async function runSync(): Promise<void> {
           ...repo,
           last_fetched_at: Date.now(),
           me_contributing: meContributing,
+          last_contributed_at: lastContributedAt || undefined,
           indexed_manually: indexedManually,
           indexed,
         };
@@ -594,6 +601,7 @@ async function runQuickCheckOnce(): Promise<void> {
             ...apiRepo,
             last_fetched_at: Date.now(),
             me_contributing: storedRepo.me_contributing,
+            last_contributed_at: storedRepo.last_contributed_at,
             indexed_manually: storedRepo.indexed_manually,
             indexed: storedRepo.indexed,
           },

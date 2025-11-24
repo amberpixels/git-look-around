@@ -186,6 +186,7 @@ export interface RepoRecord {
   first_visited_at?: number; // Timestamp of first visit
   // Contributor status
   me_contributing?: boolean; // Whether the authenticated user is a contributor
+  last_contributed_at?: string; // ISO 8601 date of user's last commit (only set if me_contributing=true)
   // Index status
   indexed?: boolean; // Whether this repo is in the active index (synced with issues/PRs)
   indexed_manually?: boolean; // True if user manually added to index (overrides auto-rules)
