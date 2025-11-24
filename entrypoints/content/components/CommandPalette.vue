@@ -287,7 +287,10 @@
       <div class="status-bar">
         <div class="status-indicator">
           <span class="status-dot" :class="syncStateClass" :title="syncStateTooltip"></span>
-          <span class="status-text">{{ syncStateText }}</span>
+          <span class="status-text">
+            {{ syncStateText }}
+            <span v-if="syncCurrentRepo" class="syncing-repo">{{ syncCurrentRepo }}...</span>
+          </span>
         </div>
 
         <!-- Rate limit warning (only shown when close to limit) -->
@@ -351,7 +354,10 @@ const {
 const { status: syncStatus } = useSyncStatus(500);
 const { rateLimit } = useRateLimit(0);
 const { preferences } = useSyncPreferences();
-const { searchResults, setEntities } = useUnifiedSearch();
+
+// Pass current username (reactive) for authorship-based sorting
+const currentUsername = computed(() => syncStatus.value?.accountLogin || undefined);
+const { searchResults, setEntities } = useUnifiedSearch(currentUsername);
 
 /**
  * Load all PRs and issues for indexed repos
@@ -662,9 +668,7 @@ const syncStateText = computed(() => {
     if (indexedRepos === 0) {
       return `${account}: Syncing...`;
     } else {
-      const currentRepo = status.progress.currentRepo;
-      const repoSuffix = currentRepo ? ` (${currentRepo})` : '';
-      return `${account}: Syncing ${progress}/${indexedRepos}${repoSuffix}`;
+      return `${account}: Syncing ${progress}/${indexedRepos}`;
     }
   } else if (status.lastCompletedAt) {
     const timeAgo = Math.round((Date.now() - status.lastCompletedAt) / 1000 / 60);
@@ -675,6 +679,14 @@ const syncStateText = computed(() => {
   } else {
     return `${account} - not synced`;
   }
+});
+
+/**
+ * Current repo being synced (for display)
+ */
+const syncCurrentRepo = computed(() => {
+  if (!syncStatus.value?.isRunning) return null;
+  return syncStatus.value.progress.currentRepo;
 });
 
 /**
@@ -1406,6 +1418,12 @@ defineExpose({
   text-overflow: ellipsis;
   flex: 1;
   min-width: 0;
+}
+
+.syncing-repo {
+  font-style: italic;
+  opacity: 0.8;
+  margin-left: 4px;
 }
 
 .rate-limit-warning {

@@ -2,7 +2,7 @@
  * Composable for unified search across repos, PRs, and issues
  * Returns a flat list of search results with type-based weighting
  */
-import { ref, computed } from 'vue';
+import { ref, computed, type Ref } from 'vue';
 import type { RepoRecord, IssueRecord, PullRequestRecord } from '@/src/types';
 
 export type SearchResultType = 'repo' | 'pr' | 'issue';
@@ -64,8 +64,16 @@ function calculateMatchScore(text: string, query: string): number {
   return 0; // No match
 }
 
-export function useUnifiedSearch() {
+export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | string) {
   const allEntities = ref<SearchableEntity[]>([]);
+
+  // Support both ref and plain string
+  const username = computed(() => {
+    if (typeof currentUsername === 'object' && 'value' in currentUsername) {
+      return currentUsername.value;
+    }
+    return currentUsername;
+  });
 
   /**
    * Build a flat list of all searchable items
@@ -158,14 +166,24 @@ export function useUnifiedSearch() {
   /**
    * Sort search results by:
    * 1. Search score (if query provided)
-   * 2. Visited items first (by last_visited_at DESC)
-   * 3. Never-visited items last (by updated_at DESC)
+   * 2. Authored by current user (PRs/issues only)
+   * 3. Visited items first (by last_visited_at DESC)
+   * 4. Never-visited items last (by updated_at DESC)
    */
   function sortResults(results: SearchResultItem[], hasQuery: boolean): SearchResultItem[] {
     return [...results].sort((a, b) => {
       // If there's a query, score is primary
       if (hasQuery && a.score !== b.score) {
         return b.score - a.score;
+      }
+
+      // Prioritize items authored by current user (for PRs/issues)
+      if (username.value) {
+        const authoredByMeA = a.user?.login === username.value;
+        const authoredByMeB = b.user?.login === username.value;
+
+        if (authoredByMeA && !authoredByMeB) return -1; // A is mine, B isn't → A first
+        if (!authoredByMeA && authoredByMeB) return 1; // B is mine, A isn't → B first
       }
 
       // Visited items come before never-visited items
