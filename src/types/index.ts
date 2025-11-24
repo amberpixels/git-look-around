@@ -313,18 +313,6 @@ export interface PullRequestRecord {
 }
 
 /**
- * Visit tracking for ranking
- */
-export interface VisitRecord {
-  id: string; // Composite key: `${type}:${entity_id}` (e.g., "repo:123", "pr:456")
-  type: 'repo' | 'issue' | 'pr';
-  entity_id: number; // ID of the repo/issue/PR
-  visitCount: number;
-  lastVisitedAt: number; // Timestamp
-  firstVisitedAt: number; // Timestamp
-}
-
-/**
  * Metadata for sync state
  */
 export interface MetaRecord {

@@ -25,8 +25,12 @@ import { getSyncPreferences } from '@/src/storage/chrome';
 import { isUserContributor } from '@/src/api/contributors';
 import type { IssueRecord, PullRequestRecord } from '@/src/types';
 
-// Repos with last update older than 6 months are considered non-indexed by default
+// Repos with last update older than 6 months are NOT indexed by default
+// (unless manually indexed or me_contributing is true)
 const INDEXED_ACTIVITY_THRESHOLD_MS = 6 * 30 * 24 * 60 * 60 * 1000; // ~6 months
+
+// Maximum number of "repos of interest" to index (to avoid excessive syncing)
+const MAX_INDEXED_REPOS = 100;
 
 /**
  * Sync status stored in IndexedDB meta
@@ -76,8 +80,9 @@ export async function getSyncStatus(): Promise<SyncStatus> {
 
 /**
  * Update sync status
+ * Exported for use in background initialization to clear stuck states
  */
-async function updateSyncStatus(updates: Partial<SyncStatus>): Promise<void> {
+export async function updateSyncStatus(updates: Partial<SyncStatus>): Promise<void> {
   const current = await getSyncStatus();
   const newStatus = { ...current, ...updates };
   await setMeta(SYNC_STATUS_KEY, newStatus);
@@ -130,14 +135,16 @@ export async function shouldRunSync(): Promise<boolean> {
 }
 
 /**
- * Determine if repo should be indexed (actively synced with issues/PRs)
- * Rules:
- * - If indexed_manually is true, always indexed
- * - If me_contributing is false, NOT indexed
- * - If pushed_at older than 6 months, NOT indexed
- * - Otherwise, indexed
+ * Determine if repo is a "repo of interest" (should be indexed/synced with issues/PRs)
+ *
+ * A repo is "of interest" if:
+ * 1. Manually indexed (indexed_manually = true) - always included
+ * 2. You're a contributor (me_contributing = true) - even if old/inactive
+ * 3. Has recent activity (pushed within last 6 months)
+ *
+ * Note: We'll apply a limit of MAX_INDEXED_REPOS to avoid excessive syncing
  */
-function shouldIndexRepo(repo: {
+function isRepoOfInterest(repo: {
   pushed_at: string | null;
   me_contributing?: boolean;
   indexed_manually?: boolean;
@@ -147,22 +154,22 @@ function shouldIndexRepo(repo: {
     return true;
   }
 
-  // Not a contributor = not indexed
-  if (repo.me_contributing === false) {
-    return false;
+  // You're contributing = always of interest (even if old)
+  if (repo.me_contributing === true) {
+    return true;
   }
 
-  // No recent activity = not indexed
+  // Has recent activity (within 6 months) = of interest
   if (repo.pushed_at) {
     const lastPush = new Date(repo.pushed_at).getTime();
     const now = Date.now();
-    if (now - lastPush > INDEXED_ACTIVITY_THRESHOLD_MS) {
-      return false;
+    if (now - lastPush <= INDEXED_ACTIVITY_THRESHOLD_MS) {
+      return true;
     }
   }
 
-  // Default: indexed
-  return true;
+  // Default: not of interest
+  return false;
 }
 
 /**
@@ -172,6 +179,7 @@ function shouldIndexRepo(repo: {
 export async function runSync(): Promise<void> {
   const canRun = await shouldRunSync();
   if (!canRun) {
+    console.warn('[Sync] Skipping sync - shouldRunSync returned false');
     return;
   }
 
@@ -208,8 +216,8 @@ export async function runSync(): Promise<void> {
     const allRepos = await getAllAccessibleRepos();
     console.warn(`[Sync] Found ${allRepos.length} total repositories`);
 
-    // Check contributor status and determine indexed status for each repo
-    console.warn('[Sync] Checking contributor status and indexed status...');
+    // Check contributor status and determine "repos of interest"
+    console.warn('[Sync] Checking contributor status and repos of interest...');
     const repoRecords = await Promise.all(
       allRepos.map(async (repo) => {
         const [owner, repoName] = repo.full_name.split('/');
@@ -225,8 +233,8 @@ export async function runSync(): Promise<void> {
         const existingRepo = await getRepo(repo.id);
         const indexedManually = existingRepo?.indexed_manually || false;
 
-        // Determine if repo should be indexed
-        const indexed = shouldIndexRepo({
+        // Determine if this is a "repo of interest"
+        const indexed = isRepoOfInterest({
           pushed_at: repo.pushed_at,
           me_contributing: meContributing,
           indexed_manually: indexedManually,
@@ -244,13 +252,45 @@ export async function runSync(): Promise<void> {
 
     // Save all repos immediately (so UI can show them)
     await saveRepos(repoRecords);
+
+    // Get repos of interest (candidates for indexing)
+    const reposOfInterest = repoRecords.filter((repo) => repo.indexed);
+
+    // Apply limit: take top MAX_INDEXED_REPOS (prioritize manually indexed, then contributing, then recent)
+    const indexedRepos = reposOfInterest
+      .sort((a, b) => {
+        // Manually indexed first
+        if (a.indexed_manually && !b.indexed_manually) return -1;
+        if (!a.indexed_manually && b.indexed_manually) return 1;
+
+        // Contributing repos second
+        if (a.me_contributing && !b.me_contributing) return -1;
+        if (!a.me_contributing && b.me_contributing) return 1;
+
+        // Then by most recent activity
+        const pushA = a.pushed_at ? new Date(a.pushed_at).getTime() : 0;
+        const pushB = b.pushed_at ? new Date(b.pushed_at).getTime() : 0;
+        return pushB - pushA;
+      })
+      .slice(0, MAX_INDEXED_REPOS);
+
+    // Update indexed flag for repos that made the cut
+    const finalRepoRecords = repoRecords.map((repo) => ({
+      ...repo,
+      indexed: indexedRepos.includes(repo),
+    }));
+
+    // Save updated indexed flags
+    await saveRepos(finalRepoRecords);
+
+    const nonIndexedRepos = finalRepoRecords.filter((repo) => !repo.indexed);
+
     console.warn(
       `[Sync] ✓ Saved ${allRepos.length} repos to DB (${repoRecords.filter((r) => r.me_contributing).length} where you contribute)`,
     );
-
-    // Separate indexed and non-indexed repos
-    const indexedRepos = repoRecords.filter((repo) => repo.indexed);
-    const nonIndexedRepos = repoRecords.filter((repo) => !repo.indexed);
+    console.warn(
+      `[Sync] ✓ Selected ${indexedRepos.length}/${reposOfInterest.length} repos of interest for indexing (limit: ${MAX_INDEXED_REPOS})`,
+    );
 
     console.warn(
       `[Sync] Indexed repos: ${indexedRepos.length}, Non-indexed repos: ${nonIndexedRepos.length} (skipping sync)`,
