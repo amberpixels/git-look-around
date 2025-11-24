@@ -1,15 +1,9 @@
 /**
  * IndexedDB storage layer for Gitjump
- * Stores repos, issues, pull requests, and visit tracking
+ * Stores repos, issues, pull requests, and metadata
  */
 
-import type {
-  RepoRecord,
-  IssueRecord,
-  PullRequestRecord,
-  VisitRecord,
-  MetaRecord,
-} from '@/src/types';
+import type { RepoRecord, IssueRecord, PullRequestRecord, MetaRecord } from '@/src/types';
 
 const DB_NAME = 'gitjump';
 const DB_VERSION = 4; // Bumped for indexed field
@@ -19,7 +13,6 @@ export const STORES = {
   REPOS: 'repos',
   ISSUES: 'issues',
   PULL_REQUESTS: 'pull_requests',
-  VISITS: 'visits',
   META: 'meta',
 } as const;
 
@@ -81,14 +74,6 @@ export function initDB(): Promise<IDBDatabase> {
         prStore.createIndex('updated_at', 'updated_at', { unique: false });
         prStore.createIndex('last_fetched_at', 'last_fetched_at', { unique: false });
         prStore.createIndex('last_visited_at', 'last_visited_at', { unique: false });
-      }
-
-      // Create visits store
-      if (!db.objectStoreNames.contains(STORES.VISITS)) {
-        const visitStore = db.createObjectStore(STORES.VISITS, { keyPath: 'id' });
-        visitStore.createIndex('type', 'type', { unique: false });
-        visitStore.createIndex('lastVisitedAt', 'lastVisitedAt', { unique: false });
-        visitStore.createIndex('visitCount', 'visitCount', { unique: false });
       }
 
       // Create meta store
@@ -284,14 +269,6 @@ export async function savePullRequests(prs: PullRequestRecord[]): Promise<void> 
 
 // ==================== Visit tracking helpers ====================
 
-export async function getVisit(
-  type: 'repo' | 'issue' | 'pr',
-  entityId: number,
-): Promise<VisitRecord | undefined> {
-  const id = `${type}:${entityId}`;
-  return getFromStore<VisitRecord>(STORES.VISITS, id);
-}
-
 export async function recordVisit(type: 'repo' | 'issue' | 'pr', entityId: number): Promise<void> {
   const now = Date.now();
 
@@ -333,27 +310,6 @@ export async function recordVisit(type: 'repo' | 'issue' | 'pr', entityId: numbe
       });
     }
   }
-
-  // Optional: Also keep VisitRecord for analytics (can remove if not needed)
-  const id = `${type}:${entityId}`;
-  const existing = await getVisit(type, entityId);
-
-  const visit: VisitRecord = existing
-    ? {
-        ...existing,
-        visitCount: existing.visitCount + 1,
-        lastVisitedAt: now,
-      }
-    : {
-        id,
-        type,
-        entity_id: entityId,
-        visitCount: 1,
-        lastVisitedAt: now,
-        firstVisitedAt: now,
-      };
-
-  return putInStore(STORES.VISITS, visit);
 }
 
 // ==================== Meta helpers ====================

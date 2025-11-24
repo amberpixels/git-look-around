@@ -158,8 +158,8 @@ export function useUnifiedSearch() {
   /**
    * Sort search results by:
    * 1. Search score (if query provided)
-   * 2. Last visited timestamp
-   * 3. Updated timestamp
+   * 2. Visited items first (by last_visited_at DESC)
+   * 3. Never-visited items last (by updated_at DESC)
    */
   function sortResults(results: SearchResultItem[], hasQuery: boolean): SearchResultItem[] {
     return [...results].sort((a, b) => {
@@ -168,14 +168,19 @@ export function useUnifiedSearch() {
         return b.score - a.score;
       }
 
-      // Visit priority
-      const visitedA = a.lastVisitedAt ?? 0;
-      const visitedB = b.lastVisitedAt ?? 0;
-      if (visitedA !== visitedB) {
-        return visitedB - visitedA;
+      // Visited items come before never-visited items
+      const hasVisitedA = a.lastVisitedAt != null;
+      const hasVisitedB = b.lastVisitedAt != null;
+
+      if (hasVisitedA && !hasVisitedB) return -1; // A visited, B not → A first
+      if (!hasVisitedA && hasVisitedB) return 1; // B visited, A not → B first
+
+      // Both visited: sort by visit time DESC
+      if (hasVisitedA && hasVisitedB) {
+        return b.lastVisitedAt! - a.lastVisitedAt!;
       }
 
-      // Recency priority
+      // Both never-visited: sort by updated_at DESC
       const updatedA = a.updatedAt ?? 0;
       const updatedB = b.updatedAt ?? 0;
       return updatedB - updatedA;

@@ -662,7 +662,9 @@ const syncStateText = computed(() => {
     if (indexedRepos === 0) {
       return `${account}: Syncing...`;
     } else {
-      return `${account}: Syncing ${progress}/${indexedRepos}`;
+      const currentRepo = status.progress.currentRepo;
+      const repoSuffix = currentRepo ? ` (${currentRepo})` : '';
+      return `${account}: Syncing ${progress}/${indexedRepos}${repoSuffix}`;
     }
   } else if (status.lastCompletedAt) {
     const timeAgo = Math.round((Date.now() - status.lastCompletedAt) / 1000 / 60);
@@ -921,6 +923,18 @@ onMounted(async () => {
     }
   });
 });
+
+// Watch for sync completion to reload PRs/issues if palette is open
+watch(
+  () => syncStatus.value?.isRunning,
+  async (isRunning, wasRunning) => {
+    // Sync just completed (was running, now not running)
+    if (wasRunning === true && isRunning === false && panelMode.value !== 'HIDDEN') {
+      console.log('[CommandPalette] Sync completed, reloading PRs and issues...');
+      await loadAllPRsAndIssues();
+    }
+  },
+);
 
 function handleBackdropClick(e: MouseEvent) {
   // Only close if clicking the backdrop, not the popup itself

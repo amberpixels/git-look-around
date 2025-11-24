@@ -3,6 +3,7 @@ import type { ExtensionMessage } from '@/src/messages/types';
 import {
   runSync,
   getSyncStatus,
+  updateSyncStatus,
   forceSync,
   startQuickCheckLoop,
   setQuickCheckBrowsingMode,
@@ -20,18 +21,30 @@ import {
 export default defineBackground(() => {
   console.warn('[Background] Gitjump background initialized', { id: browser.runtime.id });
 
-  // Run initial sync when extension loads
-  runSync()
-    .then(() => {
-      // Start quick-check polling loop after initial sync completes
+  // Initialize sync system
+  (async () => {
+    // Clear any stuck sync state from previous session (e.g., hot-reload, extension restart)
+    const status = await getSyncStatus();
+    if (status.isRunning) {
+      console.warn('[Background] Clearing stuck sync state from previous session...');
+      await updateSyncStatus({
+        isRunning: false,
+        lastError: 'Extension reloaded - sync state reset',
+      });
+    }
+
+    // Run initial sync
+    console.warn('[Background] Starting initial sync...');
+    try {
+      await runSync();
       console.warn('[Background] Initial sync completed, starting quick-check loop...');
       startQuickCheckLoop();
-    })
-    .catch((err) => {
+    } catch (err) {
       console.error('[Background] Initial sync failed:', err);
       // Still start quick-check even if initial sync fails
       startQuickCheckLoop();
-    });
+    }
+  })();
 
   // Listen for keyboard command
   browser.commands.onCommand.addListener((command) => {
