@@ -25,9 +25,12 @@ export function useKeyboardShortcuts(actions: KeyboardActions, isVisible: () => 
     const isTypingInField =
       target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
 
-    // If user is typing in a field, only allow Escape to close the palette
-    if (isTypingInField && e.key !== 'Escape') {
-      return;
+    // If user is typing in a field, only allow specific navigation keys and Escape
+    if (isTypingInField) {
+      const allowedKeys = ['Escape', 'ArrowUp', 'ArrowDown', 'Enter'];
+      if (!allowedKeys.includes(e.key)) {
+        return;
+      }
     }
 
     if (e.key === 'Escape') {

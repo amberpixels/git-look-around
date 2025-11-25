@@ -30,7 +30,7 @@ export interface SearchResultItem {
   updatedAt?: number;
 }
 
-interface SearchableEntity {
+export interface SearchableEntity {
   repo: RepoRecord;
   issues: IssueRecord[];
   prs: PullRequestRecord[];

@@ -311,6 +311,7 @@ import { useSyncPreferences } from '@/src/composables/useSyncPreferences';
 import { useBackgroundMessage } from '@/src/composables/useBackgroundMessage';
 import { useKeyboardShortcuts } from '@/src/composables/useKeyboardShortcuts';
 import { useUnifiedSearch, type SearchResultItem } from '@/src/composables/useUnifiedSearch';
+import { useSearchCache } from '@/src/composables/useSearchCache';
 import { MessageType } from '@/src/messages/types';
 import type { RepoRecord, IssueRecord, PullRequestRecord } from '@/src/types';
 import { getCachedTheme, setCachedTheme, type ThemeMode } from '@/src/storage/chrome';
@@ -358,6 +359,7 @@ const { preferences } = useSyncPreferences();
 // Pass current username (reactive) for authorship-based sorting
 const currentUsername = computed(() => syncStatus.value?.accountLogin || undefined);
 const { searchResults, setEntities } = useUnifiedSearch(currentUsername);
+const { loadCache, saveCache } = useSearchCache();
 
 /**
  * Load all PRs and issues for indexed repos
@@ -399,7 +401,14 @@ async function loadAllPRsAndIssues() {
     issues: issuesByRepo[repo.id] || [],
     prs: prsByRepo[repo.id] || [],
   }));
-  setEntities(entities);
+
+  // Only update if changed (saveCache returns true if changed)
+  if (saveCache(entities)) {
+    console.log('[CommandPalette] Data updated, refreshing search index');
+    setEntities(entities);
+  } else {
+    console.log('[CommandPalette] Data unchanged, using cache');
+  }
 
   dataLoading.value = false;
 }
@@ -909,6 +918,13 @@ onMounted(async () => {
   // Silently load data in background so it's ready when user opens overlay
   await loadReposData();
 
+  // Load cached search results immediately to avoid empty state
+  const cachedEntities = loadCache();
+  if (cachedEntities) {
+    console.log('[CommandPalette] Loaded cached entities');
+    setEntities(cachedEntities);
+  }
+
   // Detect actual theme from DOM and update cache if different
   // This happens after initial render, so no flash occurs
   await updateTheme();
@@ -1006,7 +1022,7 @@ defineExpose({
   align-items: flex-start;
   justify-content: center;
   z-index: 999999;
-  padding-top: 15vh;
+  padding-top: 10vh;
 }
 
 .gitjump-popup {
@@ -1014,7 +1030,7 @@ defineExpose({
   border: 1px solid #d0d7de;
   border-radius: 12px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  max-width: 600px;
+  max-width: 675px;
   width: 100%;
   max-height: 70vh;
   display: flex;
