@@ -26,16 +26,27 @@
             stroke-linecap="round"
           />
         </svg>
-        <input
-          ref="searchInputRef"
-          v-model="searchQuery"
-          type="text"
-          class="search-input"
-          :placeholder="searchPlaceholder"
-          @focus="enterFilteredMode"
-          @blur="handleInputBlur"
-          @input="handleSearchInput"
-        />
+        <div v-if="repoFilter" class="repo-filter-badge">
+          {{ formatRepoName(repoFilter.full_name) }}
+        </div>
+        <div class="input-wrapper">
+          <input
+            ref="searchInputRef"
+            v-model="searchQuery"
+            type="text"
+            class="search-input"
+            :placeholder="searchPlaceholder"
+            @focus="enterFilteredMode"
+            @blur="handleInputBlur"
+            @input="handleSearchInput"
+            @keydown.delete="handleBackspace"
+          />
+          <!-- Ghost text hint for first result -->
+          <div v-if="showGhostText" class="ghost-text-overlay">
+            <span class="ghost-text-invisible">{{ searchQuery }}</span>
+            <span class="ghost-text-visible">{{ ghostTextSuffix }}</span>
+          </div>
+        </div>
       </div>
 
       <!-- (2) Main content: unified results list -->
@@ -46,9 +57,9 @@
 
       <div v-else class="results-container">
         <!-- Unified flat list of repos, PRs, and issues -->
-        <ul v-if="filteredResults.length > 0" class="results-list">
+        <ul v-if="visibleResults.length > 0" class="results-list">
           <li
-            v-for="(item, index) in filteredResults"
+            v-for="(item, index) in visibleResults"
             :key="item.id"
             :ref="(el) => setItemRef(item.id, el)"
             class="result-item"
@@ -94,7 +105,7 @@
               </div>
               <div class="result-content repo-content">
                 <a :href="item.url" class="result-title" @click="handleRepoClick">
-                  {{ item.title }}
+                  {{ formatRepoName(item.title) }}
                 </a>
                 <div
                   v-if="
@@ -120,7 +131,7 @@
               <div class="result-icon">
                 <!-- PR: Draft -->
                 <svg
-                  v-if="item.draft"
+                  v-if="item.draft && item.state === 'open'"
                   class="icon-pr icon-draft"
                   viewBox="0 0 16 16"
                   width="16"
@@ -161,7 +172,7 @@
                   ></path>
                 </svg>
               </div>
-              <div class="result-content">
+              <div class="result-content" :class="{ 'compact-layout': !!repoFilter }">
                 <a :href="item.url" class="result-title" @click="handleRepoClick">
                   <span class="result-number">#{{ item.number }}</span>
                   {{ item.title }}
@@ -174,7 +185,9 @@
                     :title="`Opened by @${item.user.login}`"
                     class="user-avatar"
                   />
-                  <span class="repo-parent">in {{ item.repoName }}</span>
+                  <span v-if="!repoFilter" class="repo-parent"
+                    >in {{ formatRepoName(item.repoName) }}</span
+                  >
                 </div>
               </div>
             </template>
@@ -195,7 +208,7 @@
                   ></path>
                 </svg>
               </div>
-              <div class="result-content">
+              <div class="result-content" :class="{ 'compact-layout': !!repoFilter }">
                 <a :href="item.url" class="result-title" @click="handleRepoClick">
                   <span class="result-number">#{{ item.number }}</span>
                   {{ item.title }}
@@ -208,12 +221,21 @@
                     :title="`Opened by @${item.user.login}`"
                     class="user-avatar"
                   />
-                  <span class="repo-parent">in {{ item.repoName }}</span>
+                  <span v-if="!repoFilter" class="repo-parent"
+                    >in {{ formatRepoName(item.repoName) }}</span
+                  >
                 </div>
               </div>
             </template>
           </li>
         </ul>
+
+        <!-- Load More Button -->
+        <div v-if="hasMoreResults" class="load-more-container">
+          <button class="load-more-btn" @click="showAllResults">
+            Show all {{ filteredResults.length }} results
+          </button>
+        </div>
 
         <!-- Non-indexed repos separator and list -->
         <div v-if="filteredNonIndexedRepos.length > 0" class="non-indexed-section">
@@ -256,7 +278,7 @@
               </div>
               <div class="result-content">
                 <a :href="repo.html_url" class="result-title" @click="handleRepoClick">
-                  {{ repo.full_name }}
+                  {{ formatRepoName(repo.full_name) }}
                 </a>
               </div>
               <button
@@ -276,7 +298,7 @@
 
         <!-- No results message -->
         <div
-          v-if="searchQuery && filteredResults.length === 0 && filteredNonIndexedRepos.length === 0"
+          v-if="searchQuery && visibleResults.length === 0 && filteredNonIndexedRepos.length === 0"
           class="status empty-state"
         >
           No results match "{{ searchQuery }}"
@@ -327,11 +349,37 @@ const isDarkTheme = ref(false);
 type PanelMode = 'NORMAL' | 'FILTERED' | 'HIDDEN';
 const panelMode = ref<PanelMode>('HIDDEN');
 
+// Nested filtered mode state
+const repoFilter = ref<RepoRecord | null>(null);
+const previousSearchQuery = ref('');
+
 // Flag to skip initial focus event (when we programmatically focus on open)
 const skipNextFocusEvent = ref(false);
 
 // Use debounced query for filtering to keep typing blazingly fast
 const normalizedSearchQuery = computed(() => debouncedSearchQuery.value.trim().toLowerCase());
+
+/**
+ * Check if all repos share the same owner.
+ * If so, we can strip the owner prefix from the display to save space.
+ */
+const commonOwnerPrefix = computed(() => {
+  if (repos.value.length === 0) return '';
+  const firstOwner = repos.value[0].owner.login;
+  const allSame = repos.value.every((r) => r.owner.login === firstOwner);
+  return allSame ? `${firstOwner}/` : '';
+});
+
+/**
+ * Format repo name for display, stripping common prefix if applicable
+ */
+function formatRepoName(fullName: string | undefined): string {
+  if (!fullName) return '';
+  if (commonOwnerPrefix.value && fullName.startsWith(commonOwnerPrefix.value)) {
+    return fullName.slice(commonOwnerPrefix.value.length);
+  }
+  return fullName;
+}
 
 // Track all PRs and issues by repo for unified search
 const allPRsByRepo = ref<Record<number, PullRequestRecord[]>>({});
@@ -340,6 +388,44 @@ const dataLoading = ref(false);
 
 const itemRefs = new Map<string, HTMLElement | null>();
 const focusedIndex = ref(0);
+
+/**
+ * Ghost text logic
+ */
+const showGhostText = computed(() => {
+  // Only show if:
+  // 1. We have a search query
+  // 2. We are NOT in nested filtered mode
+  // 3. We have results
+  // 4. The focused result is a repo
+  if (!searchQuery.value || repoFilter.value || visibleResults.value.length === 0) {
+    return false;
+  }
+
+  const focusedItem = visibleResults.value[focusedIndex.value];
+  if (!focusedItem) return false;
+
+  return focusedItem.type === 'repo';
+});
+
+const ghostTextSuffix = computed(() => {
+  if (!showGhostText.value) return '';
+
+  const focusedItem = visibleResults.value[focusedIndex.value];
+  if (!focusedItem) return '';
+
+  const repoName = formatRepoName(focusedItem.title);
+  const query = searchQuery.value;
+
+  // Case 1: Prefix match (standard ghost text)
+  if (repoName.toLowerCase().startsWith(query.toLowerCase())) {
+    // Return the suffix, preserving the repo's casing
+    return repoName.slice(query.length);
+  }
+
+  // Case 2: Fuzzy match (show full name with separator)
+  return ` — ${repoName}`;
+});
 
 const { sendMessage } = useBackgroundMessage();
 
@@ -434,6 +520,19 @@ const filteredResults = computed(() => {
   const query = normalizedSearchQuery.value;
   const results = searchResults.value(query);
 
+  // If we have a repo filter, we only search within that repo
+  if (repoFilter.value) {
+    return results.filter((item) => {
+      // Filter by repoId for PRs/issues
+      // For repo items, we generally don't show them in nested mode unless we want to jump to the repo itself?
+      // But the user is searching *inside* the repo.
+      // Let's exclude the repo item itself to avoid confusion, or maybe include it if it matches?
+      // If I search "fix", I want issues/PRs.
+      // Let's stick to contents.
+      return item.repoId === repoFilter.value?.id;
+    });
+  }
+
   // Apply quick-switcher logic: hide or deprioritize current repo
   return applyQuickSwitcherLogic(results);
 });
@@ -478,6 +577,21 @@ const filteredNonIndexedRepos = computed(() => {
       (repo.description?.toLowerCase().includes(query) ?? false),
   );
 });
+
+const INITIAL_RESULT_LIMIT = 30;
+const resultLimit = ref(INITIAL_RESULT_LIMIT);
+
+const visibleResults = computed(() => {
+  return filteredResults.value.slice(0, resultLimit.value);
+});
+
+const hasMoreResults = computed(() => {
+  return filteredResults.value.length > visibleResults.value.length;
+});
+
+function showAllResults() {
+  resultLimit.value = filteredResults.value.length;
+}
 
 /**
  * Detect current GitHub repo from URL
@@ -547,7 +661,7 @@ function isItemFocused(index: number): boolean {
  * Ensure focused item is visible
  */
 function ensureFocusVisible() {
-  const results = filteredResults.value;
+  const results = visibleResults.value;
   const item = results[focusedIndex.value];
   if (!item) return;
   const el = itemRefs.get(item.id);
@@ -558,7 +672,7 @@ function ensureFocusVisible() {
  * Move focus to next item
  */
 function moveNext() {
-  const maxIndex = filteredResults.value.length - 1;
+  const maxIndex = visibleResults.value.length - 1;
   if (focusedIndex.value < maxIndex) {
     focusedIndex.value++;
     nextTick(() => ensureFocusVisible());
@@ -579,7 +693,7 @@ function movePrev() {
  * Navigate to focused item
  */
 function navigateToFocusedItem(newTab: boolean = false) {
-  const item = filteredResults.value[focusedIndex.value];
+  const item = visibleResults.value[focusedIndex.value];
   if (!item) return;
 
   if (newTab) {
@@ -610,14 +724,18 @@ watch(searchQuery, (newQuery) => {
   }, 150);
 });
 
+watch(debouncedSearchQuery, () => {
+  resultLimit.value = INITIAL_RESULT_LIMIT;
+});
+
 watch(focusedIndex, () => {
   nextTick(() => ensureFocusVisible());
 });
 
-watch(filteredResults, () => {
+watch(visibleResults, () => {
   // Reset focus if current index is out of bounds
-  if (focusedIndex.value >= filteredResults.value.length) {
-    focusedIndex.value = Math.max(0, filteredResults.value.length - 1);
+  if (focusedIndex.value >= visibleResults.value.length) {
+    focusedIndex.value = Math.max(0, visibleResults.value.length - 1);
   }
 });
 
@@ -627,6 +745,46 @@ watch(filteredResults, () => {
  */
 function navigateToFocusedTarget(newTab: boolean = false) {
   navigateToFocusedItem(newTab);
+}
+
+function handleTab() {
+  // If already in filtered mode, do nothing (or maybe autocomplete in future)
+  if (repoFilter.value) return;
+
+  // If not in filtered mode, check focused result
+  const focusedItem = visibleResults.value[focusedIndex.value];
+  if (focusedItem && focusedItem.type === 'repo') {
+    // Enter nested filtered mode
+    const repo = getRepoById(focusedItem.entityId);
+    if (repo) {
+      console.log('[Gitjump] Entering nested filtered mode for:', repo.full_name);
+      // Save current query before clearing
+      previousSearchQuery.value = searchQuery.value;
+      repoFilter.value = repo;
+      searchQuery.value = ''; // Clear query to start searching in repo
+      debouncedSearchQuery.value = '';
+      // Ensure input keeps focus
+      searchInputRef.value?.focus();
+    }
+  }
+}
+
+function handleBackspace(_e: KeyboardEvent) {
+  // If in nested mode and query is empty, exit nested mode on Backspace
+  if (repoFilter.value && searchQuery.value === '') {
+    console.log('[Gitjump] Exiting nested filtered mode via Backspace');
+    repoFilter.value = null;
+    searchQuery.value = previousSearchQuery.value;
+    debouncedSearchQuery.value = previousSearchQuery.value;
+
+    // Restore FILTERED mode if we have a query
+    if (searchQuery.value.trim()) {
+      panelMode.value = 'FILTERED';
+    }
+
+    // Prevent default to avoid deleting characters from the previous state (though it's empty)
+    // But we want to feel natural.
+  }
 }
 
 /**
@@ -784,6 +942,9 @@ function exitFilteredModeAndClear() {
   searchQuery.value = '';
   debouncedSearchQuery.value = '';
   focusedIndex.value = 0;
+  resultLimit.value = INITIAL_RESULT_LIMIT;
+  repoFilter.value = null;
+  previousSearchQuery.value = '';
 
   // CRITICAL FIX: We must set panelMode to NORMAL *before* refocusing
   panelMode.value = 'NORMAL';
@@ -813,7 +974,9 @@ async function show() {
   searchQuery.value = '';
   debouncedSearchQuery.value = '';
   focusedIndex.value = 0;
+  resultLimit.value = INITIAL_RESULT_LIMIT;
   panelMode.value = 'NORMAL';
+  repoFilter.value = null;
   sendMessage(MessageType.SET_QUICK_CHECK_BROWSING);
 
   // Load repos and all PRs/issues
@@ -978,8 +1141,24 @@ useKeyboardShortcuts(
     expand: () => {}, // No longer used in flat list
     collapse: () => {}, // No longer used in flat list
     select: (newTab) => navigateToFocusedTarget(newTab),
+    tab: () => handleTab(),
     dismiss: () => {
       console.log('[Gitjump] Action: dismiss', { panelMode: panelMode.value });
+
+      // If in nested mode, exit nested mode first
+      if (repoFilter.value) {
+        console.log('[Gitjump] Exiting nested filtered mode via Escape');
+        repoFilter.value = null;
+        searchQuery.value = previousSearchQuery.value;
+        debouncedSearchQuery.value = previousSearchQuery.value;
+
+        // Restore FILTERED mode if we have a query
+        if (searchQuery.value.trim()) {
+          panelMode.value = 'FILTERED';
+        }
+        return;
+      }
+
       if (panelMode.value === 'FILTERED') {
         exitFilteredModeAndClear();
         console.log('[Gitjump] After exitFilteredModeAndClear:', {
@@ -1081,6 +1260,7 @@ defineExpose({
   font-family: inherit;
   background: transparent;
   color: #24292f;
+  line-height: 20px;
 }
 
 .search-input::placeholder {
@@ -1199,6 +1379,22 @@ defineExpose({
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.result-content.compact-layout {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.result-content.compact-layout .result-title {
+  flex: 1;
+  min-width: 0;
+  margin-right: 8px;
+}
+
+.result-content.compact-layout .result-meta {
+  flex-shrink: 0;
 }
 
 .repo-content {
@@ -1596,5 +1792,127 @@ defineExpose({
 
 .dark-theme .status-text {
   color: #768390;
+}
+
+.load-more-container {
+  padding: 12px;
+  display: flex;
+  justify-content: center;
+  border-bottom: 1px solid #d0d7de;
+}
+
+.load-more-btn {
+  background: #f6f8fa;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #24292f;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.load-more-btn:hover {
+  background: #f3f4f6;
+  border-color: #8b949e;
+}
+
+.dark-theme .load-more-container {
+  border-bottom-color: #373e47;
+}
+
+.dark-theme .load-more-btn {
+  background: #22272e;
+  border-color: #444c56;
+  color: #adbac7;
+}
+
+.dark-theme .load-more-btn:hover {
+  background: #30363d;
+  border-color: #8b949e;
+}
+
+.repo-hint {
+  margin-left: auto;
+  font-size: 12px;
+  color: #57606a;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.hint-key {
+  border: 1px solid #d0d7de;
+  border-radius: 4px;
+  padding: 0 4px;
+  font-size: 11px;
+  background: #f6f8fa;
+  color: #57606a;
+}
+
+.dark-theme .hint-key {
+  border-color: #444c56;
+  background: #22272e;
+  color: #adbac7;
+}
+
+.repo-filter-badge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 14px;
+  color: #24292f;
+  background: #f6f8fa;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid #d0d7de;
+  white-space: nowrap;
+}
+
+.dark-theme .repo-filter-badge {
+  background: #22272e;
+  border-color: #444c56;
+  color: #adbac7;
+}
+
+.repo-filter-slash {
+  color: #57606a;
+}
+
+.input-wrapper {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.ghost-text-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  padding: 0;
+  font-size: 14px;
+  font-family: inherit;
+  white-space: pre;
+  overflow: hidden;
+  line-height: 20px;
+}
+
+.ghost-text-invisible {
+  color: transparent;
+}
+
+.ghost-text-visible {
+  color: #8c959f;
+}
+
+.dark-theme .ghost-text-visible {
+  color: #6e7681;
 }
 </style>

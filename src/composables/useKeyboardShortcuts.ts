@@ -9,6 +9,7 @@ export interface KeyboardActions {
   dismiss: () => void;
   focusInput: () => void;
   onType: (char: string) => void;
+  tab: () => void;
 }
 
 export function useKeyboardShortcuts(actions: KeyboardActions, isVisible: () => boolean) {
@@ -27,7 +28,7 @@ export function useKeyboardShortcuts(actions: KeyboardActions, isVisible: () => 
 
     // If user is typing in a field, only allow specific navigation keys and Escape
     if (isTypingInField) {
-      const allowedKeys = ['Escape', 'ArrowUp', 'ArrowDown', 'Enter'];
+      const allowedKeys = ['Escape', 'ArrowUp', 'ArrowDown', 'Enter', 'Tab'];
       if (!allowedKeys.includes(e.key)) {
         return;
       }
@@ -81,6 +82,14 @@ export function useKeyboardShortcuts(actions: KeyboardActions, isVisible: () => 
       e.stopPropagation();
       const newTab = e.metaKey || e.ctrlKey;
       actions.select(newTab);
+      return;
+    }
+
+    if (e.key === 'Tab') {
+      console.log('[Gitjump] Shortcut: Tab');
+      e.preventDefault();
+      e.stopPropagation();
+      actions.tab();
       return;
     }
 
