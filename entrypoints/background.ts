@@ -19,9 +19,13 @@ import {
 } from '@/src/storage/db';
 import { useUnifiedSearch } from '@/src/composables/useUnifiedSearch';
 import type { SearchableEntity } from '@/src/composables/useUnifiedSearch';
+import { useSearchCache } from '@/src/composables/useSearchCache';
 
 export default defineBackground(() => {
   console.warn('[Background] Gitjump background initialized', { id: browser.runtime.id });
+
+  // Initialize search cache
+  const { loadCache, saveCache } = useSearchCache();
 
   // Initialize sync system
   (async () => {
@@ -144,22 +148,35 @@ export default defineBackground(() => {
               currentUsername?: string;
             };
 
-            // Get all repos
-            const repos = await getAllRepos();
+            // Try to load from cache first
+            const cachedEntities = await loadCache();
 
-            // Filter to indexed repos only
-            const indexedRepos = repos.filter((repo) => repo.indexed);
+            let entities: SearchableEntity[];
 
-            // Build SearchableEntity array
-            const entities: SearchableEntity[] = await Promise.all(
-              indexedRepos.map(async (repo) => {
-                const [issues, prs] = await Promise.all([
-                  getIssuesByRepo(repo.id),
-                  getPullRequestsByRepo(repo.id),
-                ]);
-                return { repo, issues, prs };
-              }),
-            );
+            if (cachedEntities) {
+              // Use cached data immediately
+              entities = cachedEntities;
+            } else {
+              // Get all repos
+              const repos = await getAllRepos();
+
+              // Filter to indexed repos only
+              const indexedRepos = repos.filter((repo) => repo.indexed);
+
+              // Build SearchableEntity array
+              entities = await Promise.all(
+                indexedRepos.map(async (repo) => {
+                  const [issues, prs] = await Promise.all([
+                    getIssuesByRepo(repo.id),
+                    getPullRequestsByRepo(repo.id),
+                  ]);
+                  return { repo, issues, prs };
+                }),
+              );
+
+              // Save to cache for next time
+              await saveCache(entities);
+            }
 
             // Use useUnifiedSearch to get sorted results
             const { searchResults, setEntities } = useUnifiedSearch(currentUsername);
@@ -167,6 +184,29 @@ export default defineBackground(() => {
             const results = searchResults.value(query);
 
             sendResponse({ success: true, data: results });
+
+            // Update cache in background if we used cached data
+            if (cachedEntities) {
+              (async () => {
+                try {
+                  const repos = await getAllRepos();
+                  const indexedRepos = repos.filter((repo) => repo.indexed);
+                  const freshEntities: SearchableEntity[] = await Promise.all(
+                    indexedRepos.map(async (repo) => {
+                      const [issues, prs] = await Promise.all([
+                        getIssuesByRepo(repo.id),
+                        getPullRequestsByRepo(repo.id),
+                      ]);
+                      return { repo, issues, prs };
+                    }),
+                  );
+                  await saveCache(freshEntities);
+                } catch (err) {
+                  console.error('[Background] Failed to update cache in background:', err);
+                }
+              })();
+            }
+
             break;
           }
 
@@ -176,22 +216,35 @@ export default defineBackground(() => {
               currentUsername?: string;
             };
 
-            // Get all repos
-            const repos = await getAllRepos();
+            // Try to load from cache first
+            const cachedEntitiesDebug = await loadCache();
 
-            // Filter to indexed repos only
-            const indexedRepos = repos.filter((repo) => repo.indexed);
+            let entities: SearchableEntity[];
 
-            // Build SearchableEntity array
-            const entities: SearchableEntity[] = await Promise.all(
-              indexedRepos.map(async (repo) => {
-                const [issues, prs] = await Promise.all([
-                  getIssuesByRepo(repo.id),
-                  getPullRequestsByRepo(repo.id),
-                ]);
-                return { repo, issues, prs };
-              }),
-            );
+            if (cachedEntitiesDebug) {
+              // Use cached data immediately
+              entities = cachedEntitiesDebug;
+            } else {
+              // Get all repos
+              const repos = await getAllRepos();
+
+              // Filter to indexed repos only
+              const indexedRepos = repos.filter((repo) => repo.indexed);
+
+              // Build SearchableEntity array
+              entities = await Promise.all(
+                indexedRepos.map(async (repo) => {
+                  const [issues, prs] = await Promise.all([
+                    getIssuesByRepo(repo.id),
+                    getPullRequestsByRepo(repo.id),
+                  ]);
+                  return { repo, issues, prs };
+                }),
+              );
+
+              // Save to cache for next time
+              await saveCache(entities);
+            }
 
             // Use useUnifiedSearch to get sorted results
             const { searchResults, setEntities } = useUnifiedSearch(currentUsername);

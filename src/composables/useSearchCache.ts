@@ -7,11 +7,12 @@ export function useSearchCache() {
   const cachedString = ref<string | null>(null);
 
   /**
-   * Load entities from session storage
+   * Load entities from browser storage
    */
-  function loadCache(): SearchableEntity[] | null {
+  async function loadCache(): Promise<SearchableEntity[] | null> {
     try {
-      const json = sessionStorage.getItem(CACHE_KEY);
+      const result = await browser.storage.local.get(CACHE_KEY);
+      const json = result[CACHE_KEY] as string | undefined;
       if (!json) return null;
 
       cachedString.value = json;
@@ -23,11 +24,11 @@ export function useSearchCache() {
   }
 
   /**
-   * Save entities to session storage
+   * Save entities to browser storage
    * Returns true if data was different from cache (and thus UI should update)
    * even if saving to storage failed
    */
-  function saveCache(entities: SearchableEntity[]): boolean {
+  async function saveCache(entities: SearchableEntity[]): Promise<boolean> {
     let json: string;
     try {
       json = JSON.stringify(entities);
@@ -47,7 +48,7 @@ export function useSearchCache() {
     cachedString.value = json;
 
     try {
-      sessionStorage.setItem(CACHE_KEY, json);
+      await browser.storage.local.set({ [CACHE_KEY]: json });
     } catch (e) {
       console.error('[Gitjump] Failed to save search cache (likely quota exceeded)', e);
       // Return true because data CHANGED, even if we couldn't persist it
