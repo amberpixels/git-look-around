@@ -28,6 +28,9 @@ export interface SearchResultItem {
   score: number; // Search relevance score (higher = better)
   lastVisitedAt?: number;
   updatedAt?: number;
+  // Flags for sorting
+  isMine?: boolean; // Authored by current user (PR/Issue) or Owned by current user (Repo)
+  recentlyContributedByMe?: boolean; // Contributed to in last 2 months
 }
 
 export interface SearchableEntity {
@@ -45,6 +48,8 @@ const TYPE_WEIGHTS = {
   pr: 10,
   issue: 5,
 } as const;
+
+const TWO_MONTHS_MS = 2 * 30 * 24 * 60 * 60 * 1000;
 
 /**
  * Calculate search score for a text match
@@ -76,11 +81,21 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
   });
 
   /**
+   * Check if a date is within the last 2 months
+   */
+  function isRecent(dateStr?: string | null): boolean {
+    if (!dateStr) return false;
+    const date = new Date(dateStr).getTime();
+    return Date.now() - date < TWO_MONTHS_MS;
+  }
+
+  /**
    * Build a flat list of all searchable items
    */
   function buildSearchResults(query: string = ''): SearchResultItem[] {
     const results: SearchResultItem[] = [];
     const normalizedQuery = query.trim().toLowerCase();
+    const currentUser = username.value;
 
     for (const entity of allEntities.value) {
       const { repo, issues, prs } = entity;
@@ -103,6 +118,9 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
           score: repoMatchScore * TYPE_WEIGHTS.repo,
           lastVisitedAt: repo.last_visited_at,
           updatedAt: repo.pushed_at ? new Date(repo.pushed_at).getTime() : undefined,
+          state: 'open', // Repos are always "open"
+          isMine: currentUser ? repo.owner.login === currentUser : false,
+          recentlyContributedByMe: isRecent(repo.last_contributed_at),
         });
       }
 
@@ -129,6 +147,8 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
             score: matchScore * TYPE_WEIGHTS.pr,
             lastVisitedAt: pr.last_visited_at,
             updatedAt: new Date(pr.updated_at).getTime(),
+            isMine: currentUser ? pr.user.login === currentUser : false,
+            recentlyContributedByMe: false, // We don't track per-PR contribution dates yet
           });
         }
       }
@@ -155,6 +175,8 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
             score: matchScore * TYPE_WEIGHTS.issue,
             lastVisitedAt: issue.last_visited_at,
             updatedAt: new Date(issue.updated_at).getTime(),
+            isMine: currentUser ? issue.user.login === currentUser : false,
+            recentlyContributedByMe: false, // We don't track per-issue contribution dates yet
           });
         }
       }
@@ -166,24 +188,17 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
   /**
    * Sort search results by:
    * 1. Search score (if query provided)
-   * 2. Authored by current user (PRs/issues only)
-   * 3. Visited items first (by last_visited_at DESC)
-   * 4. Never-visited items last (by updated_at DESC)
+   * 2. Visited items first (by last_visited_at DESC)
+   * 3. State (Open/Repo > Closed)
+   * 4. isMine (Authored/Owned by me)
+   * 5. recentlyContributedByMe (Contributed in last 2 months)
+   * 6. Updated At (DESC)
    */
   function sortResults(results: SearchResultItem[], hasQuery: boolean): SearchResultItem[] {
     return [...results].sort((a, b) => {
       // If there's a query, score is primary
       if (hasQuery && a.score !== b.score) {
         return b.score - a.score;
-      }
-
-      // Prioritize items authored by current user (for PRs/issues)
-      if (username.value) {
-        const authoredByMeA = a.user?.login === username.value;
-        const authoredByMeB = b.user?.login === username.value;
-
-        if (authoredByMeA && !authoredByMeB) return -1; // A is mine, B isn't → A first
-        if (!authoredByMeA && authoredByMeB) return 1; // B is mine, A isn't → B first
       }
 
       // Visited items come before never-visited items
@@ -196,6 +211,24 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
       // Both visited: sort by visit time DESC
       if (hasVisitedA && hasVisitedB) {
         return b.lastVisitedAt! - a.lastVisitedAt!;
+      }
+
+      // State: Open > Closed
+      // Repos are treated as 'open'
+      const isOpenA = a.state === 'open';
+      const isOpenB = b.state === 'open';
+
+      if (isOpenA && !isOpenB) return -1; // A open, B closed → A first
+      if (!isOpenA && isOpenB) return 1; // B open, A closed → B first
+
+      // isMine (Authored/Owned by me)
+      if (a.isMine !== b.isMine) {
+        return a.isMine ? -1 : 1;
+      }
+
+      // recentlyContributedByMe
+      if (a.recentlyContributedByMe !== b.recentlyContributedByMe) {
+        return a.recentlyContributedByMe ? -1 : 1;
       }
 
       // Both never-visited: sort by updated_at DESC
