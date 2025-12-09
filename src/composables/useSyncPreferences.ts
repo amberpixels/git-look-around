@@ -9,6 +9,7 @@ export function useSyncPreferences() {
   const preferences = ref<SyncPreferences>({
     syncIssues: true,
     syncPullRequests: true,
+    debugMode: false,
   });
   const loading = ref(true);
 

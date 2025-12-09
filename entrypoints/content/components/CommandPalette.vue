@@ -332,11 +332,11 @@ import { useRateLimit } from '@/src/composables/useRateLimit';
 import { useSyncPreferences } from '@/src/composables/useSyncPreferences';
 import { useBackgroundMessage } from '@/src/composables/useBackgroundMessage';
 import { useKeyboardShortcuts } from '@/src/composables/useKeyboardShortcuts';
-import { useUnifiedSearch, type SearchResultItem } from '@/src/composables/useUnifiedSearch';
-import { useSearchCache } from '@/src/composables/useSearchCache';
+import type { SearchResultItem } from '@/src/composables/useUnifiedSearch';
 import { MessageType } from '@/src/messages/types';
 import type { RepoRecord, IssueRecord, PullRequestRecord } from '@/src/types';
 import { getCachedTheme, setCachedTheme, type ThemeMode } from '@/src/storage/chrome';
+import { debugLog, debugLogSync, debugWarnSync } from '@/src/utils/debug';
 
 const searchQuery = ref(''); // Immediate input value (updates on every keystroke)
 
@@ -444,18 +444,63 @@ const { preferences } = useSyncPreferences();
 
 // Pass current username (reactive) for authorship-based sorting
 const currentUsername = computed(() => syncStatus.value?.accountLogin || undefined);
-const { searchResults, setEntities } = useUnifiedSearch(currentUsername);
-const { loadCache, saveCache } = useSearchCache();
+
+// Store search results from background
+const rawSearchResults = ref<SearchResultItem[]>([]);
 
 /**
- * Load all PRs and issues for indexed repos
+ * Fetch search results from background
+ */
+async function fetchSearchResults(query: string = '') {
+  try {
+    const messageType = preferences.value.debugMode ? MessageType.DEBUG_SEARCH : MessageType.SEARCH;
+
+    const results = await sendMessage<SearchResultItem[]>(messageType, {
+      query,
+      currentUsername: currentUsername.value,
+    });
+
+    // Log debug info if debug mode is enabled
+    if (preferences.value.debugMode) {
+      console.group('[CommandPalette] Search Results Debug');
+      console.log('Query:', query || '(empty - showing all)');
+      console.log('Total results:', results.length);
+      console.table(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        results.slice(0, 20).map((r: any) => ({
+          type: r.type,
+          title: r.title.substring(0, 50),
+          lastVisited: r._debug?.lastVisitedAtFormatted || 'N/A',
+          bucket: r._debug?.bucket || 'N/A',
+          score: r._debug?.score || 0,
+          isMine: r._debug?.isMine || false,
+          state: r._debug?.state || 'N/A',
+        })),
+      );
+      console.groupEnd();
+    }
+
+    rawSearchResults.value = results;
+  } catch (err) {
+    console.error('[CommandPalette] Error fetching search results:', err);
+    rawSearchResults.value = [];
+  }
+}
+
+/**
+ * Load all PRs and issues for indexed repos (now delegates to background)
  */
 async function loadAllPRsAndIssues() {
   dataLoading.value = true;
+
+  // Fetch search results from background (empty query = all results)
+  await fetchSearchResults(normalizedSearchQuery.value);
+
+  // Build allIssuesByRepo and allPRsByRepo for backward compatibility
+  // (used by repoCounts and other UI elements)
+  const indexedReposList = indexedRepos.value;
   const prsByRepo: Record<number, PullRequestRecord[]> = {};
   const issuesByRepo: Record<number, IssueRecord[]> = {};
-
-  const indexedReposList = indexedRepos.value;
 
   await Promise.all(
     indexedReposList.map(async (repo) => {
@@ -481,21 +526,6 @@ async function loadAllPRsAndIssues() {
   allIssuesByRepo.value = issuesByRepo;
   allPRsByRepo.value = prsByRepo;
 
-  // Update unified search index
-  const entities = indexedReposList.map((repo) => ({
-    repo,
-    issues: issuesByRepo[repo.id] || [],
-    prs: prsByRepo[repo.id] || [],
-  }));
-
-  // Only update if changed (saveCache returns true if changed)
-  if (saveCache(entities)) {
-    console.log('[CommandPalette] Data updated, refreshing search index');
-    setEntities(entities);
-  } else {
-    console.log('[CommandPalette] Data unchanged, using cache');
-  }
-
   dataLoading.value = false;
 }
 
@@ -517,8 +547,7 @@ const repoCounts = computed(() => {
  * Get filtered search results based on current query
  */
 const filteredResults = computed(() => {
-  const query = normalizedSearchQuery.value;
-  const results = searchResults.value(query);
+  const results = rawSearchResults.value;
 
   // If we have a repo filter, we only search within that repo
   if (repoFilter.value) {
@@ -726,6 +755,8 @@ watch(searchQuery, (newQuery) => {
 
 watch(debouncedSearchQuery, () => {
   resultLimit.value = INITIAL_RESULT_LIMIT;
+  // Fetch new search results from background when query changes
+  fetchSearchResults(normalizedSearchQuery.value);
 });
 
 watch(focusedIndex, () => {
@@ -757,7 +788,7 @@ function handleTab() {
     // Enter nested filtered mode
     const repo = getRepoById(focusedItem.entityId);
     if (repo) {
-      console.log('[Gitjump] Entering nested filtered mode for:', repo.full_name);
+      debugLogSync('[Gitjump] Entering nested filtered mode for:', repo.full_name);
       // Save current query before clearing
       previousSearchQuery.value = searchQuery.value;
       repoFilter.value = repo;
@@ -772,7 +803,7 @@ function handleTab() {
 function handleBackspace(_e: KeyboardEvent) {
   // If in nested mode and query is empty, exit nested mode on Backspace
   if (repoFilter.value && searchQuery.value === '') {
-    console.log('[Gitjump] Exiting nested filtered mode via Backspace');
+    debugLogSync('[Gitjump] Exiting nested filtered mode via Backspace');
     repoFilter.value = null;
     searchQuery.value = previousSearchQuery.value;
     debouncedSearchQuery.value = previousSearchQuery.value;
@@ -792,10 +823,10 @@ function handleBackspace(_e: KeyboardEvent) {
  */
 function handleSearchInput() {
   if (searchQuery.value.trim() && panelMode.value === 'NORMAL') {
-    console.warn('[Gitjump] User typed, entering FILTERED mode');
+    debugWarnSync('[Gitjump] User typed, entering FILTERED mode');
     panelMode.value = 'FILTERED';
   } else if (!searchQuery.value.trim() && panelMode.value === 'FILTERED') {
-    console.warn('[Gitjump] Search cleared, returning to NORMAL mode');
+    debugWarnSync('[Gitjump] Search cleared, returning to NORMAL mode');
     panelMode.value = 'NORMAL';
   }
 }
@@ -907,19 +938,19 @@ const rateLimitTooltip = computed(() => {
 /**
  * Panel mode transitions
  */
-function enterFilteredMode() {
-  console.log('[Gitjump] State: enterFilteredMode', {
+async function enterFilteredMode() {
+  await debugLog('[Gitjump] State: enterFilteredMode', {
     currentMode: panelMode.value,
     skipNextFocusEvent: skipNextFocusEvent.value,
   });
   if (skipNextFocusEvent.value) {
     skipNextFocusEvent.value = false;
-    console.log('[Gitjump] Skipping initial focus event');
+    await debugLog('[Gitjump] Skipping initial focus event');
     return;
   }
   if (panelMode.value === 'NORMAL') {
     panelMode.value = 'FILTERED';
-    console.log('[Gitjump] State Change: NORMAL -> FILTERED');
+    await debugLog('[Gitjump] State Change: NORMAL -> FILTERED');
   }
 }
 
@@ -928,8 +959,8 @@ function handleInputBlur() {
   // We intentionally do nothing here to keep the panel state stable
 }
 
-function exitFilteredModeAndClear() {
-  console.log('[Gitjump] State: exitFilteredModeAndClear', {
+async function exitFilteredModeAndClear() {
+  await debugLog('[Gitjump] State: exitFilteredModeAndClear', {
     beforeSearchQuery: searchQuery.value,
   });
 
@@ -956,14 +987,14 @@ function exitFilteredModeAndClear() {
     searchInputRef.value?.focus();
   });
 
-  console.log('[Gitjump] State Change: FILTERED -> NORMAL (cleared)', {
+  await debugLog('[Gitjump] State Change: FILTERED -> NORMAL (cleared)', {
     afterSearchQuery: searchQuery.value,
     panelMode: panelMode.value,
   });
 }
 
 async function show() {
-  console.log('[Gitjump] State: show');
+  await debugLog('[Gitjump] State: show');
 
   // Clear any pending debounce
   if (debounceTimeout) {
@@ -986,11 +1017,11 @@ async function show() {
   await nextTick();
   skipNextFocusEvent.value = true;
   searchInputRef.value?.focus();
-  console.log('[Gitjump] Palette shown, input focused, panelMode =', panelMode.value);
+  await debugLog('[Gitjump] Palette shown, input focused, panelMode =', panelMode.value);
 }
 
-function hide() {
-  console.log('[Gitjump] State: hide');
+async function hide() {
+  await debugLog('[Gitjump] State: hide');
   panelMode.value = 'HIDDEN';
   sendMessage(MessageType.SET_QUICK_CHECK_IDLE);
 }
@@ -1081,13 +1112,6 @@ onMounted(async () => {
   // Silently load data in background so it's ready when user opens overlay
   await loadReposData();
 
-  // Load cached search results immediately to avoid empty state
-  const cachedEntities = loadCache();
-  if (cachedEntities) {
-    console.log('[CommandPalette] Loaded cached entities');
-    setEntities(cachedEntities);
-  }
-
   // Detect actual theme from DOM and update cache if different
   // This happens after initial render, so no flash occurs
   await updateTheme();
@@ -1121,7 +1145,7 @@ watch(
   async (isRunning, wasRunning) => {
     // Sync just completed (was running, now not running)
     if (wasRunning === true && isRunning === false && panelMode.value !== 'HIDDEN') {
-      console.log('[CommandPalette] Sync completed, reloading PRs and issues...');
+      await debugLog('[CommandPalette] Sync completed, reloading PRs and issues...');
       await loadAllPRsAndIssues();
     }
   },
@@ -1142,12 +1166,12 @@ useKeyboardShortcuts(
     collapse: () => {}, // No longer used in flat list
     select: (newTab) => navigateToFocusedTarget(newTab),
     tab: () => handleTab(),
-    dismiss: () => {
-      console.log('[Gitjump] Action: dismiss', { panelMode: panelMode.value });
+    dismiss: async () => {
+      await debugLog('[Gitjump] Action: dismiss', { panelMode: panelMode.value });
 
       // If in nested mode, exit nested mode first
       if (repoFilter.value) {
-        console.log('[Gitjump] Exiting nested filtered mode via Escape');
+        await debugLog('[Gitjump] Exiting nested filtered mode via Escape');
         repoFilter.value = null;
         searchQuery.value = previousSearchQuery.value;
         debouncedSearchQuery.value = previousSearchQuery.value;
@@ -1160,14 +1184,14 @@ useKeyboardShortcuts(
       }
 
       if (panelMode.value === 'FILTERED') {
-        exitFilteredModeAndClear();
-        console.log('[Gitjump] After exitFilteredModeAndClear:', {
+        await exitFilteredModeAndClear();
+        await debugLog('[Gitjump] After exitFilteredModeAndClear:', {
           searchQuery: searchQuery.value,
           panelMode: panelMode.value,
         });
         searchInputRef.value?.blur();
       } else {
-        hide();
+        await hide();
       }
     },
     focusInput: () => searchInputRef.value?.focus(),

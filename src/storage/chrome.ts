@@ -15,6 +15,7 @@ const STORAGE_KEYS = {
 export interface SyncPreferences {
   syncIssues: boolean;
   syncPullRequests: boolean;
+  debugMode: boolean;
 }
 
 /**
@@ -56,13 +57,12 @@ export async function getSyncPreferences(): Promise<SyncPreferences> {
   const result = await browser.storage.local.get(STORAGE_KEYS.SYNC_PREFERENCES);
   const prefs = result[STORAGE_KEYS.SYNC_PREFERENCES] as SyncPreferences | undefined;
 
-  // Default: sync both
-  return (
-    prefs || {
-      syncIssues: true,
-      syncPullRequests: true,
-    }
-  );
+  // Default: sync both, debug mode off
+  return {
+    syncIssues: prefs?.syncIssues ?? true,
+    syncPullRequests: prefs?.syncPullRequests ?? true,
+    debugMode: prefs?.debugMode ?? false,
+  };
 }
 
 /**
