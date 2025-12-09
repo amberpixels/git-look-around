@@ -2,6 +2,7 @@ import { createApp } from 'vue';
 import App from './App.vue';
 import { MessageType } from '@/src/messages/types';
 import type { ExtensionMessage } from '@/src/messages/types';
+import { debugWarn, initDebugMode } from '@/src/utils/debug';
 
 /**
  * Detect what type of GitHub page we're on and record visit via background worker
@@ -43,7 +44,7 @@ async function detectAndRecordVisit() {
     }
 
     const fullName = `${owner}/${repo}`;
-    console.warn(`[Gitjump] On repo: ${fullName}`);
+    await debugWarn(`[Gitjump] On repo: ${fullName}`);
 
     // Ask background worker for all repos to find the ID
     try {
@@ -56,7 +57,7 @@ async function detectAndRecordVisit() {
         const repoRecord = repos.find((r: { full_name: string }) => r.full_name === fullName);
 
         if (repoRecord) {
-          console.warn(`[Gitjump] Recording visit to repo ${fullName} (ID: ${repoRecord.id})`);
+          await debugWarn(`[Gitjump] Recording visit to repo ${fullName} (ID: ${repoRecord.id})`);
 
           // Send visit event to background worker
           await browser.runtime.sendMessage({
@@ -64,9 +65,11 @@ async function detectAndRecordVisit() {
             payload: { type: 'repo', entityId: repoRecord.id },
           });
 
-          console.warn(`[Gitjump] Visit recorded successfully`);
+          await debugWarn(`[Gitjump] Visit recorded successfully`);
         } else {
-          console.warn(`[Gitjump] Repo ${fullName} not in database yet, skipping visit tracking`);
+          await debugWarn(
+            `[Gitjump] Repo ${fullName} not in database yet, skipping visit tracking`,
+          );
         }
       }
     } catch (error) {
@@ -77,8 +80,10 @@ async function detectAndRecordVisit() {
 
 export default defineContentScript({
   matches: ['*://github.com/*', '*://*.github.com/*'],
-  main(_ctx) {
-    console.warn('[Gitjump] Content script loaded on GitHub');
+  async main(_ctx) {
+    // Initialize debug mode cache
+    await initDebugMode();
+    await debugWarn('[Gitjump] Content script loaded on GitHub');
 
     // Create container for Vue app
     const container = document.createElement('div');

@@ -39,38 +39,145 @@ export interface SearchableEntity {
   prs: PullRequestRecord[];
 }
 
-/**
- * Type weights for search scoring (higher = more relevant)
- * Repos are most important, then PRs, then issues
- */
-const TYPE_WEIGHTS = {
-  repo: 100,
-  pr: 10,
-  issue: 5,
-} as const;
-
 const TWO_MONTHS_MS = 2 * 30 * 24 * 60 * 60 * 1000;
 
 /**
- * Calculate search score for a text match
- * - Exact match at start: highest score
- * - Exact match anywhere: medium score
- * - Partial match: lower score
+ * Extract prefix from a repo name (everything before first hyphen)
+ * Examples:
+ *   "hellotickets/ht-mixer" -> "ht-"
+ *   "myorg/pr-backend" -> "pr-"
+ *   "github/no-prefix" -> null
  */
-function calculateMatchScore(text: string, query: string): number {
+function extractRepoPrefix(fullName: string): string | null {
+  // Get repo name without org (after last slash)
+  const repoName = fullName.split('/').pop() || fullName;
+
+  // Find first hyphen
+  const hyphenIndex = repoName.indexOf('-');
+  if (hyphenIndex > 0) {
+    return repoName.substring(0, hyphenIndex + 1); // Include the hyphen
+  }
+
+  return null;
+}
+
+/**
+ * Analyze repos to find common prefixes
+ * Returns prefixes that appear in >= 3 repos AND >= 10% of total repos
+ */
+async function analyzeCommonPrefixes(repos: RepoRecord[]): Promise<string[]> {
+  const prefixCounts = new Map<string, number>();
+
+  // Count prefix occurrences
+  for (const repo of repos) {
+    const prefix = extractRepoPrefix(repo.full_name);
+    if (prefix) {
+      prefixCounts.set(prefix, (prefixCounts.get(prefix) || 0) + 1);
+    }
+  }
+
+  // Filter by thresholds
+  const minRepos = Math.max(3, Math.ceil(repos.length * 0.1)); // At least 3 or 10%
+  const commonPrefixes: string[] = [];
+
+  for (const [prefix, count] of prefixCounts.entries()) {
+    if (count >= minRepos) {
+      commonPrefixes.push(prefix);
+    }
+  }
+
+  // Debug log: show analysis results
+  const { debugLog } = await import('@/src/utils/debug');
+  await debugLog('[useUnifiedSearch] Common prefix analysis:', {
+    totalRepos: repos.length,
+    threshold: `>= ${minRepos} repos (10% of ${repos.length})`,
+    allPrefixes: Array.from(prefixCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([prefix, count]) => `${prefix} (${count} repos)`),
+    commonPrefixes: commonPrefixes.length > 0 ? commonPrefixes : '(none detected)',
+  });
+
+  return commonPrefixes;
+}
+
+/**
+ * Calculate search score for a text match
+ * Scoring priority:
+ * 1. Exact match: 1000
+ * 2. Common prefix + query: 950 (e.g., "ht-mixer" when searching "mixer" and "ht-" is common)
+ * 3. Starts with query: 800 (e.g., "mixer-app")
+ * 4. Word/segment ends with query: 600 (e.g., "ht-mixer" when searching "mixer", no common prefix)
+ * 5. Word boundary at start: 500 (e.g., " mixer" or "-mixer")
+ * 6. Word boundary anywhere: 400
+ * 7. Space word boundary: 300
+ * 8. Contains query: 100
+ */
+function calculateMatchScore(text: string, query: string, commonPrefixes: string[] = []): number {
   const lowerText = text.toLowerCase();
   const lowerQuery = query.toLowerCase();
 
-  if (lowerText === lowerQuery) return 1000; // Perfect match
-  if (lowerText.startsWith(lowerQuery)) return 500; // Starts with
-  if (lowerText.includes(` ${lowerQuery}`)) return 300; // Word boundary
-  if (lowerText.includes(lowerQuery)) return 100; // Contains
+  // Exact match
+  if (lowerText === lowerQuery) return 1000;
+
+  // Check for common prefix + query (e.g., "ht-mixer" when searching "mixer" and "ht-" is common)
+  // This should rank very high - almost like an exact match
+  for (const prefix of commonPrefixes) {
+    const prefixPattern = prefix.toLowerCase();
+    if (lowerText.includes(prefixPattern + lowerQuery)) {
+      // Check if this is the main part (e.g., "org/ht-mixer" or just "ht-mixer")
+      const afterQuery =
+        lowerText.indexOf(prefixPattern + lowerQuery) + prefixPattern.length + lowerQuery.length;
+      // Higher score if query is at end or followed by word boundary
+      if (
+        afterQuery === lowerText.length ||
+        [' ', '-', '/', '_', '.'].includes(lowerText[afterQuery])
+      ) {
+        return 950; // Common prefix + query at end/boundary - almost exact!
+      }
+      return 900; // Common prefix + query in middle
+    }
+  }
+
+  // Starts with query
+  if (lowerText.startsWith(lowerQuery)) return 800;
+
+  // Word/segment ends with query (e.g., "ht-mixer" ends with "mixer")
+  // This handles cases like "ht-mixer", "my-project", "some/path"
+  const wordBoundaryChars = [' ', '-', '/', '_', '.'];
+  for (const char of wordBoundaryChars) {
+    if (lowerText.endsWith(lowerQuery) || lowerText.includes(`${char}${lowerQuery}`)) {
+      // Check if it's at a word boundary at the start
+      if (
+        lowerText.startsWith(`${lowerQuery}${char}`) ||
+        lowerText.includes(`${char}${lowerQuery}${char}`)
+      ) {
+        return 500; // Word boundary at start of word
+      }
+      // Check if query appears after a boundary (e.g., "ht-mixer" contains "-mixer")
+      const index = lowerText.indexOf(`${char}${lowerQuery}`);
+      if (index >= 0) {
+        // Higher score if it's the end of a segment (e.g., "ht-mixer" not "ht-mixer-v2")
+        const afterQuery = index + char.length + lowerQuery.length;
+        if (afterQuery === lowerText.length || wordBoundaryChars.includes(lowerText[afterQuery])) {
+          return 600; // Ends with query after boundary
+        }
+        return 400; // Word boundary but not at end
+      }
+    }
+  }
+
+  // Check for word boundary with space specifically (legacy behavior)
+  if (lowerText.includes(` ${lowerQuery}`)) return 300;
+
+  // Contains query anywhere
+  if (lowerText.includes(lowerQuery)) return 100;
 
   return 0; // No match
 }
 
 export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | string) {
   const allEntities = ref<SearchableEntity[]>([]);
+  const commonPrefixes = ref<string[]>([]);
 
   // Support both ref and plain string
   const username = computed(() => {
@@ -101,9 +208,13 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
       const { repo, issues, prs } = entity;
 
       // Calculate repo match score
-      const repoNameScore = calculateMatchScore(repo.full_name, normalizedQuery);
+      const repoNameScore = calculateMatchScore(
+        repo.full_name,
+        normalizedQuery,
+        commonPrefixes.value,
+      );
       const repoDescScore = repo.description
-        ? calculateMatchScore(repo.description, normalizedQuery)
+        ? calculateMatchScore(repo.description, normalizedQuery, commonPrefixes.value)
         : 0;
       const repoMatchScore = Math.max(repoNameScore, repoDescScore);
 
@@ -115,7 +226,7 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
           entityId: repo.id,
           title: repo.full_name,
           url: repo.html_url,
-          score: repoMatchScore * TYPE_WEIGHTS.repo,
+          score: repoMatchScore,
           lastVisitedAt: repo.last_visited_at,
           updatedAt: repo.pushed_at ? new Date(repo.pushed_at).getTime() : undefined,
           state: 'open', // Repos are always "open"
@@ -126,7 +237,7 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
 
       // Add PRs
       for (const pr of prs) {
-        const prTitleScore = calculateMatchScore(pr.title, normalizedQuery);
+        const prTitleScore = calculateMatchScore(pr.title, normalizedQuery, commonPrefixes.value);
         const prNumberMatch = normalizedQuery && pr.number.toString().includes(normalizedQuery);
 
         if (!normalizedQuery || prTitleScore > 0 || prNumberMatch) {
@@ -144,7 +255,7 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
             user: pr.user,
             draft: pr.draft,
             merged: pr.merged,
-            score: matchScore * TYPE_WEIGHTS.pr,
+            score: matchScore,
             lastVisitedAt: pr.last_visited_at,
             updatedAt: new Date(pr.updated_at).getTime(),
             isMine: currentUser ? pr.user.login === currentUser : false,
@@ -155,7 +266,11 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
 
       // Add issues
       for (const issue of issues) {
-        const issueTitleScore = calculateMatchScore(issue.title, normalizedQuery);
+        const issueTitleScore = calculateMatchScore(
+          issue.title,
+          normalizedQuery,
+          commonPrefixes.value,
+        );
         const issueNumberMatch =
           normalizedQuery && issue.number.toString().includes(normalizedQuery);
 
@@ -172,7 +287,7 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
             number: issue.number,
             state: issue.state,
             user: issue.user,
-            score: matchScore * TYPE_WEIGHTS.issue,
+            score: matchScore,
             lastVisitedAt: issue.last_visited_at,
             updatedAt: new Date(issue.updated_at).getTime(),
             isMine: currentUser ? issue.user.login === currentUser : false,
@@ -187,8 +302,8 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
 
   /**
    * Sort search results by:
-   * 1. Search score (if query provided)
-   * 2. Visited items first (by last_visited_at DESC)
+   * 1. Visited items first (by last_visited_at DESC) - visit recency is the strongest signal
+   * 2. For never-visited items: search score (text match quality)
    * 3. State (Open/Repo > Closed)
    * 4. isMine (Authored/Owned by me)
    * 5. recentlyContributedByMe (Contributed in last 2 months)
@@ -196,21 +311,21 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
    */
   function sortResults(results: SearchResultItem[], hasQuery: boolean): SearchResultItem[] {
     return [...results].sort((a, b) => {
-      // If there's a query, score is primary
-      if (hasQuery && a.score !== b.score) {
-        return b.score - a.score;
-      }
-
-      // Visited items come before never-visited items
+      // PRIORITY 1: Visited items come before never-visited items
       const hasVisitedA = a.lastVisitedAt != null;
       const hasVisitedB = b.lastVisitedAt != null;
 
       if (hasVisitedA && !hasVisitedB) return -1; // A visited, B not → A first
       if (!hasVisitedA && hasVisitedB) return 1; // B visited, A not → B first
 
-      // Both visited: sort by visit time DESC
+      // PRIORITY 2: Both visited → sort by visit time DESC (most recent first)
       if (hasVisitedA && hasVisitedB) {
         return b.lastVisitedAt! - a.lastVisitedAt!;
+      }
+
+      // PRIORITY 3: Both never-visited → use search score (text match quality)
+      if (hasQuery && a.score !== b.score) {
+        return b.score - a.score;
       }
 
       // State: Open > Closed
@@ -251,8 +366,12 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
   /**
    * Set the searchable entities (repos with their PRs/issues)
    */
-  function setEntities(entities: SearchableEntity[]) {
+  async function setEntities(entities: SearchableEntity[]) {
     allEntities.value = entities;
+
+    // Analyze repos to find common prefixes
+    const repos = entities.map((e) => e.repo);
+    commonPrefixes.value = await analyzeCommonPrefixes(repos);
   }
 
   return {

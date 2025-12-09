@@ -67,6 +67,16 @@
           />
           <span>Sync Pull Requests</span>
         </label>
+
+        <label class="checkbox-label">
+          <input
+            v-model="preferences.debugMode"
+            type="checkbox"
+            class="checkbox"
+            @change="savePreferences"
+          />
+          <span>Debug Mode (show search ranking details in console)</span>
+        </label>
       </div>
 
       <p v-if="preferencesSaved" class="success small">✓ Preferences saved</p>
@@ -91,6 +101,7 @@ const error = ref('');
 const preferences = ref<SyncPreferences>({
   syncIssues: true,
   syncPullRequests: true,
+  debugMode: false,
 });
 const preferencesSaved = ref(false);
 

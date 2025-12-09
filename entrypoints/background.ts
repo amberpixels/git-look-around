@@ -17,6 +17,8 @@ import {
   recordVisit,
   setRepoIndexed,
 } from '@/src/storage/db';
+import { useUnifiedSearch } from '@/src/composables/useUnifiedSearch';
+import type { SearchableEntity } from '@/src/composables/useUnifiedSearch';
 
 export default defineBackground(() => {
   console.warn('[Background] Gitjump background initialized', { id: browser.runtime.id });
@@ -133,6 +135,88 @@ export default defineBackground(() => {
           case MessageType.SET_QUICK_CHECK_IDLE: {
             setQuickCheckIdleMode();
             sendResponse({ success: true });
+            break;
+          }
+
+          case MessageType.SEARCH: {
+            const { query, currentUsername } = message.payload as {
+              query: string;
+              currentUsername?: string;
+            };
+
+            // Get all repos
+            const repos = await getAllRepos();
+
+            // Filter to indexed repos only
+            const indexedRepos = repos.filter((repo) => repo.indexed);
+
+            // Build SearchableEntity array
+            const entities: SearchableEntity[] = await Promise.all(
+              indexedRepos.map(async (repo) => {
+                const [issues, prs] = await Promise.all([
+                  getIssuesByRepo(repo.id),
+                  getPullRequestsByRepo(repo.id),
+                ]);
+                return { repo, issues, prs };
+              }),
+            );
+
+            // Use useUnifiedSearch to get sorted results
+            const { searchResults, setEntities } = useUnifiedSearch(currentUsername);
+            await setEntities(entities);
+            const results = searchResults.value(query);
+
+            sendResponse({ success: true, data: results });
+            break;
+          }
+
+          case MessageType.DEBUG_SEARCH: {
+            const { query, currentUsername } = message.payload as {
+              query: string;
+              currentUsername?: string;
+            };
+
+            // Get all repos
+            const repos = await getAllRepos();
+
+            // Filter to indexed repos only
+            const indexedRepos = repos.filter((repo) => repo.indexed);
+
+            // Build SearchableEntity array
+            const entities: SearchableEntity[] = await Promise.all(
+              indexedRepos.map(async (repo) => {
+                const [issues, prs] = await Promise.all([
+                  getIssuesByRepo(repo.id),
+                  getPullRequestsByRepo(repo.id),
+                ]);
+                return { repo, issues, prs };
+              }),
+            );
+
+            // Use useUnifiedSearch to get sorted results
+            const { searchResults, setEntities } = useUnifiedSearch(currentUsername);
+            await setEntities(entities);
+            const results = searchResults.value(query);
+
+            // Add debug info to each result
+            const debugResults = results.map((r) => ({
+              ...r,
+              _debug: {
+                lastVisitedAt: r.lastVisitedAt,
+                lastVisitedAtFormatted: r.lastVisitedAt
+                  ? new Date(r.lastVisitedAt).toISOString()
+                  : 'never',
+                score: r.score,
+                bucket: r.lastVisitedAt ? 'visited' : 'never-visited',
+                isMine: r.isMine,
+                recentlyContributed: r.recentlyContributedByMe,
+                state: r.state,
+                updatedAt: r.updatedAt,
+                updatedAtFormatted: r.updatedAt ? new Date(r.updatedAt).toISOString() : 'unknown',
+              },
+            }));
+
+            sendResponse({ success: true, data: debugResults });
             break;
           }
 

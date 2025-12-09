@@ -13,6 +13,8 @@ export const MessageType = {
   SET_REPO_INDEXED: 'SET_REPO_INDEXED',
   SET_QUICK_CHECK_BROWSING: 'SET_QUICK_CHECK_BROWSING',
   SET_QUICK_CHECK_IDLE: 'SET_QUICK_CHECK_IDLE',
+  SEARCH: 'SEARCH',
+  DEBUG_SEARCH: 'DEBUG_SEARCH',
 } as const;
 
 export type MessageType = (typeof MessageType)[keyof typeof MessageType];

@@ -1,4 +1,5 @@
 import { ref, Ref, watch, computed } from 'vue';
+import { debugLogSync } from '@/src/utils/debug';
 
 export interface PaletteNavigationOptions<T, S> {
   items: Ref<T[]> | (() => T[]);
@@ -29,7 +30,7 @@ export function usePaletteNavigation<T, S>(options: PaletteNavigationOptions<T, 
   const expandedItemId = options.expandedItemId || ref<number | string | null>(null);
 
   function collapse() {
-    console.log('[Gitjump] Navigation: collapse');
+    debugLogSync('[Gitjump] Navigation: collapse');
     expandedItemId.value = null;
     detailFocusIndex.value = 0;
     focusMode.value = 'repos';
@@ -41,7 +42,7 @@ export function usePaletteNavigation<T, S>(options: PaletteNavigationOptions<T, 
     if (!item) return;
 
     const id = getItemId(item);
-    console.log('[Gitjump] Navigation: expand', { id, index: focusedIndex.value });
+    debugLogSync('[Gitjump] Navigation: expand', { id, index: focusedIndex.value });
     expandedItemId.value = id;
     focusMode.value = 'details';
     detailFocusIndex.value = 0;
@@ -61,7 +62,7 @@ export function usePaletteNavigation<T, S>(options: PaletteNavigationOptions<T, 
         collapse();
       } else {
         const newIndex = Math.min(detailFocusIndex.value + 1, subItems.value.length - 1);
-        console.log('[Gitjump] Navigation: moveNext (details)', {
+        debugLogSync('[Gitjump] Navigation: moveNext (details)', {
           from: detailFocusIndex.value,
           to: newIndex,
         });
@@ -73,7 +74,7 @@ export function usePaletteNavigation<T, S>(options: PaletteNavigationOptions<T, 
     const maxIndex = items.value.length - 1;
     if (maxIndex < 0) return;
     const newIndex = Math.min(focusedIndex.value + 1, maxIndex);
-    console.log('[Gitjump] Navigation: moveNext (repos)', {
+    debugLogSync('[Gitjump] Navigation: moveNext (repos)', {
       from: focusedIndex.value,
       to: newIndex,
     });
@@ -86,7 +87,7 @@ export function usePaletteNavigation<T, S>(options: PaletteNavigationOptions<T, 
         collapse();
       } else {
         const newIndex = Math.max(detailFocusIndex.value - 1, 0);
-        console.log('[Gitjump] Navigation: movePrev (details)', {
+        debugLogSync('[Gitjump] Navigation: movePrev (details)', {
           from: detailFocusIndex.value,
           to: newIndex,
         });
@@ -96,7 +97,7 @@ export function usePaletteNavigation<T, S>(options: PaletteNavigationOptions<T, 
     }
 
     const newIndex = Math.max(focusedIndex.value - 1, 0);
-    console.log('[Gitjump] Navigation: movePrev (repos)', {
+    debugLogSync('[Gitjump] Navigation: movePrev (repos)', {
       from: focusedIndex.value,
       to: newIndex,
     });
