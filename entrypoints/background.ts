@@ -18,14 +18,44 @@ import {
   setRepoIndexed,
 } from '@/src/storage/db';
 import { useUnifiedSearch } from '@/src/composables/useUnifiedSearch';
-import type { SearchableEntity } from '@/src/composables/useUnifiedSearch';
+import type { SearchableEntity, SearchResultItem } from '@/src/composables/useUnifiedSearch';
 import { useSearchCache } from '@/src/composables/useSearchCache';
+
+/**
+ * Determine which result should be cached as "first result"
+ * Takes into account quick-switcher logic that swaps current repo
+ */
+function getFirstResultToCache(
+  results: SearchResultItem[],
+  currentRepoName: string | null | undefined,
+): SearchResultItem | null {
+  if (results.length === 0) return null;
+  if (!currentRepoName) return results[0];
+
+  // Check if first result is the current repo (will be swapped)
+  const first = results[0];
+  const isCurrentRepo =
+    (first.type === 'repo' && first.title === currentRepoName) ||
+    (first.type !== 'repo' && first.repoName === currentRepoName);
+
+  // If first result is current repo and we have a second result, cache the second
+  if (isCurrentRepo && results.length >= 2) {
+    console.log(
+      '[Background] First result is current repo, caching second result instead:',
+      results[1].title,
+    );
+    return results[1];
+  }
+
+  return results[0];
+}
 
 export default defineBackground(() => {
   console.warn('[Background] Gitjump background initialized', { id: browser.runtime.id });
 
   // Initialize search cache
-  const { loadCache, saveCache } = useSearchCache();
+  const { loadCache, saveCache, saveFirstResult, loadSearchResults, saveSearchResults } =
+    useSearchCache();
 
   // Initialize sync system
   (async () => {
@@ -143,12 +173,59 @@ export default defineBackground(() => {
           }
 
           case MessageType.SEARCH: {
-            const { query, currentUsername } = message.payload as {
+            const { query, currentUsername, currentRepoName } = message.payload as {
               query: string;
               currentUsername?: string;
+              currentRepoName?: string | null;
             };
 
-            // Try to load from cache first
+            // For empty queries, try to return cached results immediately
+            if (!query) {
+              const cachedResults = await loadSearchResults();
+              if (cachedResults) {
+                console.log('[Background] Returning cached search results:', cachedResults.length);
+                sendResponse({ success: true, data: cachedResults, cacheSaved: false });
+
+                // Keep service worker alive and update cache in background
+                // Don't use IIFE - directly await so service worker stays alive
+                const cachedEntities = await loadCache();
+                let entities: SearchableEntity[];
+
+                if (cachedEntities) {
+                  entities = cachedEntities;
+                } else {
+                  const repos = await getAllRepos();
+                  const indexedRepos = repos.filter((repo) => repo.indexed);
+                  entities = await Promise.all(
+                    indexedRepos.map(async (repo) => {
+                      const [issues, prs] = await Promise.all([
+                        getIssuesByRepo(repo.id),
+                        getPullRequestsByRepo(repo.id),
+                      ]);
+                      return { repo, issues, prs };
+                    }),
+                  );
+                  await saveCache(entities);
+                }
+
+                const { searchResults, setEntities } = useUnifiedSearch(currentUsername);
+                await setEntities(entities);
+                const freshResults = searchResults.value('');
+
+                // Save fresh results and first result
+                console.log('[Background] Updating cache with fresh results');
+                await saveSearchResults(freshResults);
+                const firstResultToCache = getFirstResultToCache(freshResults, currentRepoName);
+                if (firstResultToCache) {
+                  await saveFirstResult(firstResultToCache);
+                  console.log('[Background] Updated first result cache:', firstResultToCache.title);
+                }
+
+                break;
+              }
+            }
+
+            // No cached results or non-empty query - do full fetch
             const cachedEntities = await loadCache();
 
             let entities: SearchableEntity[];
@@ -183,7 +260,22 @@ export default defineBackground(() => {
             await setEntities(entities);
             const results = searchResults.value(query);
 
-            sendResponse({ success: true, data: results });
+            // Cache the first result for instant display next time (only for empty query)
+            let cacheSaved = false;
+            if (!query && results.length > 0) {
+              try {
+                const firstResultToCache = getFirstResultToCache(results, currentRepoName);
+                if (firstResultToCache) {
+                  await saveFirstResult(firstResultToCache);
+                }
+                await saveSearchResults(results);
+                cacheSaved = true;
+              } catch (err) {
+                console.error('[Background] Failed to save first result cache:', err);
+              }
+            }
+
+            sendResponse({ success: true, data: results, cacheSaved });
 
             // Update cache in background if we used cached data
             if (cachedEntities) {
@@ -211,12 +303,83 @@ export default defineBackground(() => {
           }
 
           case MessageType.DEBUG_SEARCH: {
-            const { query, currentUsername } = message.payload as {
+            const { query, currentUsername, currentRepoName } = message.payload as {
               query: string;
               currentUsername?: string;
+              currentRepoName?: string | null;
             };
 
-            // Try to load from cache first
+            // For empty queries, try to return cached results immediately
+            if (!query) {
+              const cachedResults = await loadSearchResults();
+              if (cachedResults) {
+                // Add debug info to cached results
+                const debugResults = cachedResults.map((r) => ({
+                  ...r,
+                  _debug: {
+                    lastVisitedAt: r.lastVisitedAt,
+                    lastVisitedAtFormatted: r.lastVisitedAt
+                      ? new Date(r.lastVisitedAt).toISOString()
+                      : 'never',
+                    score: r.score,
+                    bucket: r.lastVisitedAt ? 'visited' : 'never-visited',
+                    isMine: r.isMine,
+                    recentlyContributed: r.recentlyContributedByMe,
+                    state: r.state,
+                    updatedAt: r.updatedAt,
+                    updatedAtFormatted: r.updatedAt
+                      ? new Date(r.updatedAt).toISOString()
+                      : 'unknown',
+                  },
+                }));
+
+                console.log(
+                  '[Background] [DEBUG_SEARCH] Returning cached search results:',
+                  cachedResults.length,
+                );
+                sendResponse({ success: true, data: debugResults, cacheSaved: false });
+
+                // Keep service worker alive and update cache in background
+                const cachedEntities = await loadCache();
+                let entities: SearchableEntity[];
+
+                if (cachedEntities) {
+                  entities = cachedEntities;
+                } else {
+                  const repos = await getAllRepos();
+                  const indexedRepos = repos.filter((repo) => repo.indexed);
+                  entities = await Promise.all(
+                    indexedRepos.map(async (repo) => {
+                      const [issues, prs] = await Promise.all([
+                        getIssuesByRepo(repo.id),
+                        getPullRequestsByRepo(repo.id),
+                      ]);
+                      return { repo, issues, prs };
+                    }),
+                  );
+                  await saveCache(entities);
+                }
+
+                const { searchResults, setEntities } = useUnifiedSearch(currentUsername);
+                await setEntities(entities);
+                const freshResults = searchResults.value('');
+
+                console.log('[Background] [DEBUG_SEARCH] Updating cache with fresh results');
+                await saveSearchResults(freshResults);
+                const firstResultToCache = getFirstResultToCache(freshResults, currentRepoName);
+                if (firstResultToCache) {
+                  await saveFirstResult(firstResultToCache);
+                  console.log(
+                    '[Background] [DEBUG_SEARCH] Updated first result cache:',
+                    firstResultToCache.title,
+                  );
+                }
+
+                break;
+              }
+            }
+
+            // No cached results - do full fetch
             const cachedEntitiesDebug = await loadCache();
 
             let entities: SearchableEntity[];
@@ -251,6 +414,24 @@ export default defineBackground(() => {
             await setEntities(entities);
             const results = searchResults.value(query);
 
+            // Cache the first result for instant display next time (only for empty query)
+            let cacheSaved = false;
+            if (!query && results.length > 0) {
+              try {
+                const firstResultToCache = getFirstResultToCache(results, currentRepoName);
+                if (firstResultToCache) {
+                  await saveFirstResult(firstResultToCache);
+                }
+                await saveSearchResults(results);
+                cacheSaved = true;
+              } catch (err) {
+                console.error(
+                  '[Background] [DEBUG_SEARCH] Failed to save first result cache:',
+                  err,
+                );
+              }
+            }
+
             // Add debug info to each result
             const debugResults = results.map((r) => ({
               ...r,
@@ -269,7 +450,7 @@ export default defineBackground(() => {
               },
             }));
 
-            sendResponse({ success: true, data: debugResults });
+            sendResponse({ success: true, data: debugResults, cacheSaved });
             break;
           }
 

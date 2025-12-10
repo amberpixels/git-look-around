@@ -1,7 +1,9 @@
 import { ref } from 'vue';
-import type { SearchableEntity } from './useUnifiedSearch';
+import type { SearchableEntity, SearchResultItem } from './useUnifiedSearch';
 
 const CACHE_KEY = 'gitjump_search_entities';
+const FIRST_RESULT_KEY = 'gitjump_first_result';
+const RESULTS_CACHE_KEY = 'gitjump_search_results';
 
 export function useSearchCache() {
   const cachedString = ref<string | null>(null);
@@ -58,8 +60,86 @@ export function useSearchCache() {
     return true;
   }
 
+  /**
+   * Load the cached first result (most recently visited item)
+   * This is used for instant display when opening the palette
+   */
+  async function loadFirstResult(): Promise<SearchResultItem | null> {
+    try {
+      const result = await browser.storage.local.get(FIRST_RESULT_KEY);
+      const json = result[FIRST_RESULT_KEY] as string | undefined;
+
+      if (!json) {
+        return null;
+      }
+
+      const parsed = JSON.parse(json);
+      console.log('[SearchCache] Loaded cached first result:', parsed.title);
+
+      return parsed;
+    } catch (e) {
+      console.error('[SearchCache] Failed to load first result cache', e);
+      return null;
+    }
+  }
+
+  /**
+   * Save the first result to cache for instant display next time
+   */
+  async function saveFirstResult(result: SearchResultItem | null): Promise<void> {
+    try {
+      if (result) {
+        console.log('[SearchCache] Saving first result:', result.title);
+        const json = JSON.stringify(result);
+        await browser.storage.local.set({ [FIRST_RESULT_KEY]: json });
+      } else {
+        await browser.storage.local.remove(FIRST_RESULT_KEY);
+      }
+    } catch (e) {
+      console.error('[SearchCache] Failed to save first result cache', e);
+    }
+  }
+
+  /**
+   * Load cached search results (full processed list)
+   */
+  async function loadSearchResults(): Promise<SearchResultItem[] | null> {
+    try {
+      const result = await browser.storage.local.get(RESULTS_CACHE_KEY);
+      const json = result[RESULTS_CACHE_KEY] as string | undefined;
+
+      if (!json) {
+        return null;
+      }
+
+      const parsed = JSON.parse(json);
+      console.log('[SearchCache] Loaded cached search results:', parsed.length, 'items');
+      return parsed;
+    } catch (e) {
+      console.error('[SearchCache] Failed to load search results cache', e);
+      return null;
+    }
+  }
+
+  /**
+   * Save search results to cache
+   */
+  async function saveSearchResults(results: SearchResultItem[]): Promise<void> {
+    try {
+      const json = JSON.stringify(results);
+      await browser.storage.local.set({ [RESULTS_CACHE_KEY]: json });
+      console.log('[SearchCache] Saved search results:', results.length, 'items');
+    } catch (e) {
+      console.error('[SearchCache] Failed to save search results cache', e);
+    }
+  }
+
   return {
     loadCache,
     saveCache,
+    loadFirstResult,
+    saveFirstResult,
+    loadSearchResults,
+    saveSearchResults,
   };
 }

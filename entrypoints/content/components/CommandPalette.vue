@@ -332,6 +332,7 @@ import { useRateLimit } from '@/src/composables/useRateLimit';
 import { useSyncPreferences } from '@/src/composables/useSyncPreferences';
 import { useBackgroundMessage } from '@/src/composables/useBackgroundMessage';
 import { useKeyboardShortcuts } from '@/src/composables/useKeyboardShortcuts';
+import { useSearchCache } from '@/src/composables/useSearchCache';
 import type { SearchResultItem } from '@/src/composables/useUnifiedSearch';
 import { MessageType } from '@/src/messages/types';
 import type { RepoRecord, IssueRecord, PullRequestRecord } from '@/src/types';
@@ -441,6 +442,7 @@ const {
 const { status: syncStatus } = useSyncStatus(500);
 const { rateLimit } = useRateLimit(0);
 const { preferences } = useSyncPreferences();
+const { loadFirstResult } = useSearchCache();
 
 // Pass current username (reactive) for authorship-based sorting
 const currentUsername = computed(() => syncStatus.value?.accountLogin || undefined);
@@ -454,10 +456,12 @@ const rawSearchResults = ref<SearchResultItem[]>([]);
 async function fetchSearchResults(query: string = '') {
   try {
     const messageType = preferences.value.debugMode ? MessageType.DEBUG_SEARCH : MessageType.SEARCH;
+    const currentRepoName = getCurrentRepoFromUrl();
 
     const results = await sendMessage<SearchResultItem[]>(messageType, {
       query,
       currentUsername: currentUsername.value,
+      currentRepoName,
     });
 
     // Log debug info if debug mode is enabled
@@ -481,6 +485,10 @@ async function fetchSearchResults(query: string = '') {
     }
 
     rawSearchResults.value = results;
+
+    // Update cache with what background returned (not what's displayed after swap)
+    // Background already handles caching, so we don't need to do it here
+    // The cache is automatically managed by the background script
   } catch (err) {
     console.error('[CommandPalette] Error fetching search results:', err);
     rawSearchResults.value = [];
@@ -492,9 +500,13 @@ async function fetchSearchResults(query: string = '') {
  */
 async function loadAllPRsAndIssues() {
   dataLoading.value = true;
+  const startLoad = performance.now();
 
   // Fetch search results from background (empty query = all results)
   await fetchSearchResults(normalizedSearchQuery.value);
+
+  const loadTime = performance.now() - startLoad;
+  console.log(`[CommandPalette] Full results loaded in ${loadTime.toFixed(0)}ms`);
 
   // Build allIssuesByRepo and allPRsByRepo for backward compatibility
   // (used by repoCounts and other UI elements)
@@ -1010,7 +1022,15 @@ async function show() {
   repoFilter.value = null;
   sendMessage(MessageType.SET_QUICK_CHECK_BROWSING);
 
-  // Load repos and all PRs/issues
+  // INSTANT DISPLAY: Load cached first result immediately for zero-delay UX
+  const cachedFirstResult = await loadFirstResult();
+
+  if (cachedFirstResult) {
+    rawSearchResults.value = [cachedFirstResult];
+    console.log('[CommandPalette] ⚡ Instant display: showing cached first result');
+  }
+
+  // Load repos and all PRs/issues (this will fetch full results and replace the cached one)
   await loadReposData();
   await loadAllPRsAndIssues();
 

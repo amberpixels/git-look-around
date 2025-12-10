@@ -30,6 +30,7 @@ export default tseslint.config(
         console: 'readonly',
         document: 'readonly',
         window: 'readonly',
+        performance: 'readonly',
         // TypeScript types
         MouseEvent: 'readonly',
         KeyboardEvent: 'readonly',
