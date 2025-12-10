@@ -49,20 +49,47 @@
         </div>
         <!-- Filter: Only My Contributions -->
         <button
+          v-if="shouldShowFilterButton"
           class="filter-button"
           :class="{ active: showOnlyMyContributions }"
           :title="
             showOnlyMyContributions
               ? 'Showing only my contributions (click to show all)'
-              : 'Show only my contributions'
+              : 'Show all (click to filter only my contributions)'
           "
           @click="toggleMyContributionsFilter"
         >
-          <svg viewBox="0 0 16 16" width="16" height="16">
+          <!-- Avatar stack: show multiple avatars in "All" mode -->
+          <div v-if="!showOnlyMyContributions" class="avatar-stack">
+            <img
+              v-if="syncStatus?.accountLogin"
+              :src="`https://github.com/${syncStatus.accountLogin}.png?size=40`"
+              class="filter-avatar stack-avatar"
+              :alt="syncStatus.accountLogin"
+              :style="{ zIndex: 3 }"
+            />
+            <img
+              v-for="(username, index) in otherContributors"
+              :key="username"
+              :src="`https://github.com/${username}.png?size=40`"
+              class="filter-avatar stack-avatar"
+              :alt="username"
+              :style="{ zIndex: 2 - index, transform: `translateX(${(index + 1) * 45}%)` }"
+            />
+          </div>
+          <!-- Single avatar: show only mine in "Only mine" mode -->
+          <img
+            v-else-if="syncStatus?.accountLogin"
+            :src="`https://github.com/${syncStatus.accountLogin}.png?size=40`"
+            class="filter-avatar"
+            :alt="syncStatus.accountLogin"
+          />
+          <svg v-else viewBox="0 0 16 16" width="16" height="16">
             <path
               d="M10.561 8.073a6.005 6.005 0 0 1 3.432 5.142.75.75 0 1 1-1.498.07 4.5 4.5 0 0 0-8.99 0 .75.75 0 0 1-1.498-.07 6.004 6.004 0 0 1 3.431-5.142 3.999 3.999 0 1 1 5.123 0ZM10.5 5a2.5 2.5 0 1 0-5 0 2.5 2.5 0 0 0 5 0Z"
             />
           </svg>
+          <span class="filter-label">{{ showOnlyMyContributions ? 'Just me' : 'All' }}</span>
         </button>
       </div>
 
@@ -365,6 +392,34 @@ const isDarkTheme = ref(false);
 
 // Filter: Only show my contributions
 const showOnlyMyContributions = ref(true); // Enabled by default
+
+// Computed: Get other contributors (top 2 besides current user)
+const otherContributors = computed(() => {
+  if (!currentUsername.value) return [];
+
+  const userCounts = new Map<string, number>();
+
+  // Count contributions per user from all results
+  rawSearchResults.value.forEach((item) => {
+    if (item.type === 'pr' || item.type === 'issue') {
+      const author = item.user?.login;
+      if (author && author !== currentUsername.value) {
+        userCounts.set(author, (userCounts.get(author) || 0) + 1);
+      }
+    }
+  });
+
+  // Sort by count and take top 2
+  return Array.from(userCounts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 2)
+    .map(([username]) => username);
+});
+
+// Computed: Should show filter button (only if there are other contributors)
+const shouldShowFilterButton = computed(() => {
+  return otherContributors.value.length > 0;
+});
 
 // Panel modes: NORMAL (unfocused list), FILTERED (focused search), or HIDDEN (closed)
 type PanelMode = 'NORMAL' | 'FILTERED' | 'HIDDEN';
@@ -1318,6 +1373,7 @@ defineExpose({
   align-items: center;
   gap: 8px;
   padding: 12px 16px;
+  min-height: 48px; /* Fixed height to prevent jumping */
 }
 
 .search-icon {
@@ -1361,36 +1417,73 @@ defineExpose({
 /* Filter button */
 .filter-button {
   flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-  padding: 6px;
+  height: 24px; /* Match search input line height */
+  padding: 2px 8px;
   border: 1px solid #d0d7de;
-  border-radius: 6px;
+  border-radius: 4px;
   background: white;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 3px;
   transition: all 0.15s ease;
+  font-size: 11px;
+  font-weight: 500;
+  color: #57606a;
 }
 
 .filter-button:hover {
   background: #f6f8fa;
   border-color: #0969da;
+  color: #0969da;
 }
 
 .filter-button.active {
   background: #ddf4ff;
   border-color: #0969da;
+  color: #0969da;
+}
+
+.filter-avatar {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid white;
+}
+
+.avatar-stack {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 16px;
+  width: 36px; /* Wider to accommodate more spacing */
+}
+
+.stack-avatar {
+  position: absolute;
+  left: 0;
+  transition: transform 0.2s ease;
+}
+
+.filter-label {
+  white-space: nowrap;
+  line-height: 1;
 }
 
 .filter-button svg {
   width: 16px;
   height: 16px;
   fill: #57606a;
+  flex-shrink: 0;
 }
 
 .filter-button.active svg {
+  fill: #0969da;
+}
+
+.filter-button:hover svg {
   fill: #0969da;
 }
 
@@ -1812,16 +1905,19 @@ defineExpose({
 .dark-theme .filter-button {
   background: #1c2128;
   border-color: #444c56;
+  color: #768390;
 }
 
 .dark-theme .filter-button:hover {
   background: #2d333b;
   border-color: #539bf5;
+  color: #539bf5;
 }
 
 .dark-theme .filter-button.active {
   background: #1c2d3f;
   border-color: #539bf5;
+  color: #539bf5;
 }
 
 .dark-theme .filter-button svg {
@@ -1830,6 +1926,14 @@ defineExpose({
 
 .dark-theme .filter-button.active svg {
   fill: #539bf5;
+}
+
+.dark-theme .filter-button:hover svg {
+  fill: #539bf5;
+}
+
+.dark-theme .filter-avatar {
+  border-color: #1c2128;
 }
 
 .dark-theme .status {
