@@ -47,6 +47,23 @@
             <span class="ghost-text-visible">{{ ghostTextSuffix }}</span>
           </div>
         </div>
+        <!-- Filter: Only My Contributions -->
+        <button
+          class="filter-button"
+          :class="{ active: showOnlyMyContributions }"
+          :title="
+            showOnlyMyContributions
+              ? 'Showing only my contributions (click to show all)'
+              : 'Show only my contributions'
+          "
+          @click="toggleMyContributionsFilter"
+        >
+          <svg viewBox="0 0 16 16" width="16" height="16">
+            <path
+              d="M10.561 8.073a6.005 6.005 0 0 1 3.432 5.142.75.75 0 1 1-1.498.07 4.5 4.5 0 0 0-8.99 0 .75.75 0 0 1-1.498-.07 6.004 6.004 0 0 1 3.431-5.142 3.999 3.999 0 1 1 5.123 0ZM10.5 5a2.5 2.5 0 1 0-5 0 2.5 2.5 0 0 0 5 0Z"
+            />
+          </svg>
+        </button>
       </div>
 
       <!-- (2) Main content: unified results list -->
@@ -346,6 +363,9 @@ const debouncedSearchQuery = ref(''); // Debounced value (used for filtering to 
 const searchInputRef = ref<any>(null);
 const isDarkTheme = ref(false);
 
+// Filter: Only show my contributions
+const showOnlyMyContributions = ref(true); // Enabled by default
+
 // Panel modes: NORMAL (unfocused list), FILTERED (focused search), or HIDDEN (closed)
 type PanelMode = 'NORMAL' | 'FILTERED' | 'HIDDEN';
 const panelMode = ref<PanelMode>('HIDDEN');
@@ -559,13 +579,24 @@ const repoCounts = computed(() => {
  * Get filtered search results based on current query
  */
 const filteredResults = computed(() => {
-  const results = rawSearchResults.value;
+  let results = rawSearchResults.value;
+
+  // Apply "Only My Contributions" filter
+  if (showOnlyMyContributions.value) {
+    results = results.filter((item) => {
+      // For repos: show if user has contributed or it's their repo
+      if (item.type === 'repo') {
+        return item.isMine || item.recentlyContributedByMe;
+      }
+      // For PRs/Issues: show if user created it or is involved
+      return item.isMine || item.recentlyContributedByMe;
+    });
+  }
 
   // If we have a repo filter, we only search within that repo
   if (repoFilter.value) {
     return results.filter((item) => {
       // Filter by repoId for PRs/issues
-      // For repo items, we generally don't show them in nested mode unless we want to jump to the repo itself?
       // But the user is searching *inside* the repo.
       // Let's exclude the repo item itself to avoid confusion, or maybe include it if it matches?
       // If I search "fix", I want issues/PRs.
@@ -1055,6 +1086,16 @@ async function toggle() {
 }
 
 /**
+ * Toggle "Only My Contributions" filter
+ */
+function toggleMyContributionsFilter() {
+  showOnlyMyContributions.value = !showOnlyMyContributions.value;
+  // Save to local storage
+  browser.storage.local.set({ showOnlyMyContributions: showOnlyMyContributions.value });
+  console.log('[CommandPalette] My contributions filter:', showOnlyMyContributions.value);
+}
+
+/**
  * Handle repo link click - close palette on regular click
  * But keep open for middle-click or Cmd/Ctrl+click (new tab)
  */
@@ -1127,6 +1168,12 @@ onMounted(async () => {
   const cachedTheme = await getCachedTheme();
   if (cachedTheme) {
     isDarkTheme.value = cachedTheme === 'dark';
+  }
+
+  // Load filter preference from storage
+  const filterPrefs = await browser.storage.local.get('showOnlyMyContributions');
+  if (filterPrefs.showOnlyMyContributions !== undefined) {
+    showOnlyMyContributions.value = filterPrefs.showOnlyMyContributions;
   }
 
   // Silently load data in background so it's ready when user opens overlay
@@ -1309,6 +1356,42 @@ defineExpose({
 
 .search-input::placeholder {
   color: #57606a;
+}
+
+/* Filter button */
+.filter-button {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  padding: 6px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.filter-button:hover {
+  background: #f6f8fa;
+  border-color: #0969da;
+}
+
+.filter-button.active {
+  background: #ddf4ff;
+  border-color: #0969da;
+}
+
+.filter-button svg {
+  width: 16px;
+  height: 16px;
+  fill: #57606a;
+}
+
+.filter-button.active svg {
+  fill: #0969da;
 }
 
 /* (2) Main content area */
@@ -1724,6 +1807,29 @@ defineExpose({
 
 .dark-theme .search-input::placeholder {
   color: #768390;
+}
+
+.dark-theme .filter-button {
+  background: #1c2128;
+  border-color: #444c56;
+}
+
+.dark-theme .filter-button:hover {
+  background: #2d333b;
+  border-color: #539bf5;
+}
+
+.dark-theme .filter-button.active {
+  background: #1c2d3f;
+  border-color: #539bf5;
+}
+
+.dark-theme .filter-button svg {
+  fill: #768390;
+}
+
+.dark-theme .filter-button.active svg {
+  fill: #539bf5;
 }
 
 .dark-theme .status {
