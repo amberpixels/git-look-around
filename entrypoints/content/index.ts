@@ -46,6 +46,10 @@ async function detectAndRecordVisit() {
     const fullName = `${owner}/${repo}`;
     await debugWarn(`[Gitjump] On repo: ${fullName}`);
 
+    // Check if we're on a PR or Issue page
+    const prMatch = path.match(/^\/[^/]+\/[^/]+\/pull\/(\d+)/);
+    const issueMatch = path.match(/^\/[^/]+\/[^/]+\/issues\/(\d+)/);
+
     // Ask background worker for all repos to find the ID
     try {
       const response = await browser.runtime.sendMessage({
@@ -57,13 +61,56 @@ async function detectAndRecordVisit() {
         const repoRecord = repos.find((r: { full_name: string }) => r.full_name === fullName);
 
         if (repoRecord) {
+          // Always record repo visit
           await debugWarn(`[Gitjump] Recording visit to repo ${fullName} (ID: ${repoRecord.id})`);
-
-          // Send visit event to background worker
           await browser.runtime.sendMessage({
             type: MessageType.RECORD_VISIT,
             payload: { type: 'repo', entityId: repoRecord.id },
           });
+
+          // If on PR page, also record PR visit
+          if (prMatch) {
+            const prNumber = parseInt(prMatch[1], 10);
+            const prsResponse = await browser.runtime.sendMessage({
+              type: MessageType.GET_PRS_BY_REPO,
+              payload: repoRecord.id,
+            });
+
+            if (prsResponse.success && prsResponse.data) {
+              const pr = prsResponse.data.find((p: { number: number }) => p.number === prNumber);
+              if (pr) {
+                await debugWarn(`[Gitjump] Recording visit to PR #${prNumber} (ID: ${pr.id})`);
+                await browser.runtime.sendMessage({
+                  type: MessageType.RECORD_VISIT,
+                  payload: { type: 'pr', entityId: pr.id },
+                });
+              }
+            }
+          }
+
+          // If on Issue page, also record Issue visit
+          if (issueMatch) {
+            const issueNumber = parseInt(issueMatch[1], 10);
+            const issuesResponse = await browser.runtime.sendMessage({
+              type: MessageType.GET_ISSUES_BY_REPO,
+              payload: repoRecord.id,
+            });
+
+            if (issuesResponse.success && issuesResponse.data) {
+              const issue = issuesResponse.data.find(
+                (i: { number: number }) => i.number === issueNumber,
+              );
+              if (issue) {
+                await debugWarn(
+                  `[Gitjump] Recording visit to Issue #${issueNumber} (ID: ${issue.id})`,
+                );
+                await browser.runtime.sendMessage({
+                  type: MessageType.RECORD_VISIT,
+                  payload: { type: 'issue', entityId: issue.id },
+                });
+              }
+            }
+          }
 
           await debugWarn(`[Gitjump] Visit recorded successfully`);
         } else {

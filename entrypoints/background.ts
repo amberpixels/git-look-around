@@ -87,6 +87,7 @@ export default defineBackground(() => {
     loadSearchResults,
     saveSearchResults,
     saveContributors,
+    clearSearchResultsCache,
   } = useSearchCache();
 
   // Initialize sync system
@@ -178,6 +179,8 @@ export default defineBackground(() => {
               entityId: number;
             };
             await recordVisit(type, entityId);
+            // Clear cached search results so next search shows updated visit times
+            await clearSearchResultsCache();
             sendResponse({ success: true });
             break;
           }
