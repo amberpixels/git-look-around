@@ -169,6 +169,18 @@ export function useSearchCache() {
     }
   }
 
+  /**
+   * Clear search results cache (e.g., after a visit is recorded)
+   */
+  async function clearSearchResultsCache(): Promise<void> {
+    try {
+      await browser.storage.local.remove([RESULTS_CACHE_KEY, FIRST_RESULT_KEY]);
+      console.log('[SearchCache] Cleared search results cache');
+    } catch (e) {
+      console.error('[SearchCache] Failed to clear search results cache', e);
+    }
+  }
+
   return {
     loadCache,
     saveCache,
@@ -178,5 +190,6 @@ export function useSearchCache() {
     saveSearchResults,
     loadContributors,
     saveContributors,
+    clearSearchResultsCache,
   };
 }
