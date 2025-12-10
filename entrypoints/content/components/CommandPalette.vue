@@ -393,8 +393,17 @@ const isDarkTheme = ref(false);
 // Filter: Only show my contributions
 const showOnlyMyContributions = ref(true); // Enabled by default
 
+// Cached contributors (loaded immediately for instant button display)
+const cachedContributors = ref<string[]>([]);
+
 // Computed: Get other contributors (top 2 besides current user)
 const otherContributors = computed(() => {
+  // Use cached contributors if available and no results loaded yet
+  if (rawSearchResults.value.length === 0 && cachedContributors.value.length > 0) {
+    return cachedContributors.value;
+  }
+
+  // Otherwise compute from loaded results
   if (!currentUsername.value) return [];
 
   const userCounts = new Map<string, number>();
@@ -517,7 +526,7 @@ const {
 const { status: syncStatus } = useSyncStatus(500);
 const { rateLimit } = useRateLimit(0);
 const { preferences } = useSyncPreferences();
-const { loadFirstResult } = useSearchCache();
+const { loadFirstResult, loadContributors } = useSearchCache();
 
 // Pass current username (reactive) for authorship-based sorting
 const currentUsername = computed(() => syncStatus.value?.accountLogin || undefined);
@@ -1114,6 +1123,13 @@ async function show() {
   if (cachedFirstResult) {
     rawSearchResults.value = [cachedFirstResult];
     console.log('[CommandPalette] ⚡ Instant display: showing cached first result');
+  }
+
+  // Load cached contributors for instant button display
+  const contributors = await loadContributors();
+  if (contributors.length > 0) {
+    cachedContributors.value = contributors;
+    console.log('[CommandPalette] ⚡ Loaded cached contributors:', contributors.length);
   }
 
   // Load repos and all PRs/issues (this will fetch full results and replace the cached one)

@@ -4,6 +4,7 @@ import type { SearchableEntity, SearchResultItem } from './useUnifiedSearch';
 const CACHE_KEY = 'gitjump_search_entities';
 const FIRST_RESULT_KEY = 'gitjump_first_result';
 const RESULTS_CACHE_KEY = 'gitjump_search_results';
+const CONTRIBUTORS_KEY = 'gitjump_contributors';
 
 export function useSearchCache() {
   const cachedString = ref<string | null>(null);
@@ -134,6 +135,40 @@ export function useSearchCache() {
     }
   }
 
+  /**
+   * Load cached contributors (top 2 other users)
+   */
+  async function loadContributors(): Promise<string[]> {
+    try {
+      const result = await browser.storage.local.get(CONTRIBUTORS_KEY);
+      const json = result[CONTRIBUTORS_KEY] as string | undefined;
+
+      if (!json) {
+        return [];
+      }
+
+      const parsed = JSON.parse(json);
+      console.log('[SearchCache] Loaded cached contributors:', parsed.length, 'users');
+      return parsed;
+    } catch (e) {
+      console.error('[SearchCache] Failed to load contributors cache', e);
+      return [];
+    }
+  }
+
+  /**
+   * Save contributors to cache
+   */
+  async function saveContributors(contributors: string[]): Promise<void> {
+    try {
+      const json = JSON.stringify(contributors);
+      await browser.storage.local.set({ [CONTRIBUTORS_KEY]: json });
+      console.log('[SearchCache] Saved contributors:', contributors.length, 'users');
+    } catch (e) {
+      console.error('[SearchCache] Failed to save contributors cache', e);
+    }
+  }
+
   return {
     loadCache,
     saveCache,
@@ -141,5 +176,7 @@ export function useSearchCache() {
     saveFirstResult,
     loadSearchResults,
     saveSearchResults,
+    loadContributors,
+    saveContributors,
   };
 }
