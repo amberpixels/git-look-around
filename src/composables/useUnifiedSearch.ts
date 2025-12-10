@@ -5,7 +5,7 @@
 import { ref, computed, type Ref } from 'vue';
 import type { RepoRecord, IssueRecord, PullRequestRecord } from '@/src/types';
 
-export type SearchResultType = 'repo' | 'pr' | 'issue';
+export type SearchResultType = 'repo' | 'pr' | 'issue' | 'skeleton';
 
 export interface SearchResultItem {
   type: SearchResultType;

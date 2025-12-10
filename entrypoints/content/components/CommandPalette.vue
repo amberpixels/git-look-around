@@ -116,8 +116,24 @@
               'state-closed': item.state === 'closed',
             }"
           >
+            <!-- Skeleton result (placeholder while loading) -->
+            <template v-if="item.type === 'skeleton'">
+              <div class="result-icon">
+                <div class="skeleton-icon-circle"></div>
+              </div>
+              <div class="result-content">
+                <div class="skeleton-title-line">
+                  <span class="skeleton-number"></span>
+                  <span class="skeleton-title"></span>
+                </div>
+                <div class="result-meta">
+                  <div class="skeleton-meta-line"></div>
+                </div>
+              </div>
+            </template>
+
             <!-- Repo result -->
-            <template v-if="item.type === 'repo'">
+            <template v-else-if="item.type === 'repo'">
               <div class="result-icon">
                 <svg
                   v-if="getRepoById(item.entityId)?.private"
@@ -147,24 +163,47 @@
                   ></path>
                 </svg>
               </div>
-              <div class="result-content repo-content">
-                <a :href="item.url" class="result-title" @click="handleRepoClick">
-                  {{ formatRepoName(item.title) }}
-                </a>
-                <div
-                  v-if="
-                    repoCounts[item.entityId] &&
-                    (preferences.syncIssues || preferences.syncPullRequests)
-                  "
-                  class="repo-counts-inline"
-                >
-                  <span v-if="preferences.syncPullRequests" class="count-badge-inline prs">
-                    <svg class="icon" viewBox="0 0 16 16" width="14" height="14">
-                      <path
-                        d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"
-                      ></path>
-                    </svg>
-                    {{ repoCounts[item.entityId].prs }}
+              <div class="result-content">
+                <div class="result-title-row">
+                  <a :href="item.url" class="result-title" @click="handleRepoClick">
+                    {{ formatRepoName(item.title) }}
+                  </a>
+                  <div
+                    v-if="
+                      repoCounts[item.entityId] &&
+                      (preferences.syncIssues || preferences.syncPullRequests)
+                    "
+                    class="repo-counts-inline"
+                  >
+                    <span v-if="preferences.syncPullRequests" class="count-badge-inline prs">
+                      <svg class="icon" viewBox="0 0 16 16" width="14" height="14">
+                        <path
+                          d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"
+                        ></path>
+                      </svg>
+                      {{ repoCounts[item.entityId].prs }}
+                    </span>
+                  </div>
+                </div>
+                <div class="result-meta repo-meta-split">
+                  <span class="repo-meta-left">
+                    <img
+                      v-if="formatRepoMeta(item.entityId).leftAvatar"
+                      :src="formatRepoMeta(item.entityId).leftAvatar"
+                      :alt="formatRepoMeta(item.entityId).leftAvatarTitle || ''"
+                      :title="formatRepoMeta(item.entityId).leftAvatarTitle || ''"
+                      class="repo-meta-avatar"
+                    />
+                    {{ formatRepoMeta(item.entityId).left }}
+                  </span>
+                  <span v-if="formatRepoMeta(item.entityId).right" class="repo-meta-right">
+                    <img
+                      v-if="formatRepoMeta(item.entityId).rightAvatar"
+                      :src="formatRepoMeta(item.entityId).rightAvatar"
+                      alt="You"
+                      class="repo-meta-avatar"
+                    />
+                    {{ formatRepoMeta(item.entityId).right }}
                   </span>
                 </div>
               </div>
@@ -648,6 +687,9 @@ const filteredResults = computed(() => {
   // Apply "Only My Contributions" filter
   if (showOnlyMyContributions.value) {
     results = results.filter((item) => {
+      // Always show skeleton items (they're loading placeholders)
+      if (item.type === 'skeleton') return true;
+
       // For repos: show if user has contributed or it's their repo
       if (item.type === 'repo') {
         return item.isMine || item.recentlyContributedByMe;
@@ -660,6 +702,9 @@ const filteredResults = computed(() => {
   // If we have a repo filter, we only search within that repo
   if (repoFilter.value) {
     return results.filter((item) => {
+      // Always show skeleton items
+      if (item.type === 'skeleton') return true;
+
       // Filter by repoId for PRs/issues
       // But the user is searching *inside* the repo.
       // Let's exclude the repo item itself to avoid confusion, or maybe include it if it matches?
@@ -750,11 +795,17 @@ function applyQuickSwitcherLogic(results: SearchResultItem[]): SearchResultItem[
     return results;
   }
 
+  // Separate skeletons from real results
+  const skeletons = results.filter((r) => r.type === 'skeleton');
+  const realResults = results.filter((r) => r.type !== 'skeleton');
+
   const showingPrsOrIssues = preferences.value.syncIssues || preferences.value.syncPullRequests;
+
+  let processedResults: SearchResultItem[];
 
   if (!showingPrsOrIssues) {
     // Hide current repo completely
-    return results.filter((item) => {
+    processedResults = realResults.filter((item) => {
       if (item.type === 'repo') {
         return item.title !== currentRepoName;
       }
@@ -762,17 +813,23 @@ function applyQuickSwitcherLogic(results: SearchResultItem[]): SearchResultItem[
     });
   } else {
     // Swap 1st and 2nd if 1st is current repo
-    if (results.length >= 2) {
-      const first = results[0];
+    if (realResults.length >= 2) {
+      const first = realResults[0];
       if (
         (first.type === 'repo' && first.title === currentRepoName) ||
         (first.type !== 'repo' && first.repoName === currentRepoName)
       ) {
-        return [results[1], results[0], ...results.slice(2)];
+        processedResults = [realResults[1], realResults[0], ...realResults.slice(2)];
+      } else {
+        processedResults = realResults;
       }
+    } else {
+      processedResults = realResults;
     }
-    return results;
   }
+
+  // Always append skeletons at the end (they'll be after real results)
+  return [...processedResults, ...skeletons];
 }
 
 /**
@@ -1100,6 +1157,21 @@ async function exitFilteredModeAndClear() {
   });
 }
 
+/**
+ * Create skeleton placeholder items for smooth loading UX
+ * These fill the screen while real results are loading
+ */
+function createSkeletonItems(count: number): SearchResultItem[] {
+  return Array.from({ length: count }, (_, i) => ({
+    type: 'skeleton' as const,
+    id: `skeleton-${i}`,
+    entityId: -i - 1,
+    title: '',
+    url: '',
+    score: 0,
+  }));
+}
+
 async function show() {
   await debugLog('[Gitjump] State: show');
 
@@ -1120,9 +1192,15 @@ async function show() {
   // INSTANT DISPLAY: Load cached first result immediately for zero-delay UX
   const cachedFirstResult = await loadFirstResult();
 
+  // Always show skeletons to prevent "Not indexed" section from jumping
+  const skeletons = createSkeletonItems(15);
+
   if (cachedFirstResult) {
-    rawSearchResults.value = [cachedFirstResult];
-    console.log('[CommandPalette] ⚡ Instant display: showing cached first result');
+    rawSearchResults.value = [cachedFirstResult, ...skeletons];
+    console.log('[CommandPalette] ⚡ Instant display: cached first result + 15 skeletons');
+  } else {
+    rawSearchResults.value = skeletons;
+    console.log('[CommandPalette] ⚡ Instant display: 15 skeletons (no cached result yet)');
   }
 
   // Load cached contributors for instant button display
@@ -1184,6 +1262,74 @@ function handleRepoClick(event: MouseEvent) {
  */
 function getRepoById(repoId: number): RepoRecord | undefined {
   return repos.value.find((r) => r.id === repoId);
+}
+
+/**
+ * Format repo metadata line (last pushed + personal activity)
+ */
+function formatRepoMeta(repoId: number): {
+  left: string;
+  leftAvatar?: string;
+  leftAvatarTitle?: string;
+  right: string;
+  rightAvatar?: string;
+} {
+  const repo = getRepoById(repoId);
+  if (!repo) return { left: '—', right: '' };
+
+  let left = '';
+  let leftAvatar: string | undefined;
+  let leftAvatarTitle: string | undefined;
+  let right = '';
+  let rightAvatar: string | undefined;
+
+  // Left side: Last pushed (repo-wide activity) - no avatar since we don't have pusher info
+  if (repo.pushed_at) {
+    const pushedAt = new Date(repo.pushed_at).getTime();
+    left = `Pushed ${formatTimeAgo(pushedAt)}`;
+  }
+
+  // Right side: Personal activity with your avatar
+  const personalParts: string[] = [];
+
+  // Your last contribution (if you're a contributor)
+  if (repo.me_contributing && repo.last_contributed_at) {
+    const contributedAt = new Date(repo.last_contributed_at).getTime();
+    personalParts.push(`Pushed ${formatTimeAgo(contributedAt)}`);
+  }
+
+  // Your last visit
+  if (repo.last_visited_at) {
+    personalParts.push(`Visited ${formatTimeAgo(repo.last_visited_at)}`);
+  }
+
+  if (personalParts.length > 0) {
+    right = personalParts.join(' · ');
+    if (syncStatus.value?.accountLogin) {
+      rightAvatar = `https://github.com/${syncStatus.value.accountLogin}.png?size=32`;
+    }
+  }
+
+  return { left: left || '—', leftAvatar, leftAvatarTitle, right, rightAvatar };
+}
+
+/**
+ * Format time ago (e.g., "7m ago", "2h ago", "3d ago")
+ */
+function formatTimeAgo(timestamp: number): string {
+  const now = Date.now();
+  const diff = now - timestamp;
+
+  const minutes = Math.floor(diff / (60 * 1000));
+  const hours = Math.floor(diff / (60 * 60 * 1000));
+  const days = Math.floor(diff / (24 * 60 * 60 * 1000));
+  const months = Math.floor(diff / (30 * 24 * 60 * 60 * 1000));
+
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  if (days < 30) return `${days}d ago`;
+  return `${months}mo ago`;
 }
 
 /**
@@ -1538,14 +1684,139 @@ defineExpose({
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 16px;
+  padding: 7px 16px 8px 16px;
   border-bottom: 1px solid #d0d7de;
   cursor: pointer;
   transition: background-color 0.1s;
 }
 
-.result-item.type-repo {
-  padding: 6px 16px;
+/* Skeleton items for loading state */
+.result-item.type-skeleton {
+  cursor: default;
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.skeleton-icon-circle {
+  width: 16px;
+  height: 16px;
+  background: #d0d7de;
+  border-radius: 50%; /* Circle for PR/issue icon */
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.skeleton-title-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+}
+
+.skeleton-number {
+  height: 14px;
+  width: 32px; /* Width for "#1234" */
+  background: #d0d7de;
+  border-radius: 3px;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.skeleton-title {
+  height: 14px;
+  background: #d0d7de;
+  border-radius: 3px;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+  flex: 1;
+  max-width: 400px;
+}
+
+.skeleton-meta-line {
+  height: 12px;
+  width: 120px; /* Width for "in owner/repo" text */
+  background: #d0d7de;
+  border-radius: 3px;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+/* Vary skeleton widths for more natural loading appearance */
+.result-item.type-skeleton:nth-child(2) .skeleton-title {
+  max-width: 280px;
+}
+
+.result-item.type-skeleton:nth-child(3) .skeleton-title {
+  max-width: 380px;
+}
+
+.result-item.type-skeleton:nth-child(4) .skeleton-title {
+  max-width: 320px;
+}
+
+.result-item.type-skeleton:nth-child(5) .skeleton-title {
+  max-width: 360px;
+}
+
+.result-item.type-skeleton:nth-child(6) .skeleton-title {
+  max-width: 300px;
+}
+
+.result-item.type-skeleton:nth-child(7) .skeleton-title {
+  max-width: 400px;
+}
+
+.result-item.type-skeleton:nth-child(8) .skeleton-title {
+  max-width: 340px;
+}
+
+.result-item.type-skeleton:nth-child(9) .skeleton-title {
+  max-width: 310px;
+}
+
+.result-item.type-skeleton:nth-child(10) .skeleton-title {
+  max-width: 370px;
+}
+
+.result-item.type-skeleton:nth-child(11) .skeleton-title {
+  max-width: 290px;
+}
+
+.result-item.type-skeleton:nth-child(12) .skeleton-title {
+  max-width: 350px;
+}
+
+.result-item.type-skeleton:nth-child(13) .skeleton-title {
+  max-width: 330px;
+}
+
+.result-item.type-skeleton:nth-child(14) .skeleton-title {
+  max-width: 390px;
+}
+
+.result-item.type-skeleton:nth-child(15) .skeleton-title {
+  max-width: 310px;
+}
+
+.result-item.type-skeleton:nth-child(16) .skeleton-title {
+  max-width: 360px;
+}
+
+/* Vary meta line widths too */
+.result-item.type-skeleton:nth-child(even) .skeleton-meta-line {
+  width: 140px;
+}
+
+.result-item.type-skeleton:nth-child(3n) .skeleton-meta-line {
+  width: 160px;
+}
+
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
 
 .result-item:last-child {
@@ -1614,7 +1885,7 @@ defineExpose({
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0;
 }
 
 .result-content.compact-layout {
@@ -1633,10 +1904,11 @@ defineExpose({
   flex-shrink: 0;
 }
 
-.repo-content {
-  flex-direction: row;
+.result-title-row {
+  display: flex;
   align-items: center;
-  gap: 0;
+  gap: 8px;
+  height: 22px;
 }
 
 .result-title {
@@ -1648,9 +1920,10 @@ defineExpose({
   text-overflow: ellipsis;
   white-space: nowrap;
   display: block;
+  line-height: 22px;
 }
 
-.repo-content .result-title {
+.result-title-row .result-title {
   flex: 1;
   min-width: 0;
 }
@@ -1673,6 +1946,8 @@ defineExpose({
   gap: 6px;
   font-size: 12px;
   color: #57606a;
+  height: 22px;
+  line-height: 22px;
 }
 
 .user-avatar {
@@ -1687,12 +1962,35 @@ defineExpose({
   font-size: 12px;
 }
 
+.repo-meta-split {
+  justify-content: space-between;
+}
+
+.repo-meta-left,
+.repo-meta-right {
+  color: #57606a;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.repo-meta-avatar {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.repo-meta-right {
+  opacity: 0.8;
+}
+
 .repo-counts-inline {
   display: flex;
   gap: 6px;
   align-items: center;
   flex-shrink: 0;
-  margin-left: 12px;
 }
 
 .count-badge-inline {
@@ -1704,7 +2002,6 @@ defineExpose({
   padding: 2px 8px;
   border-radius: 12px;
   background: transparent;
-  border: 1px solid;
 }
 
 .count-badge-inline .icon {
@@ -1714,7 +2011,6 @@ defineExpose({
 
 .count-badge-inline.prs {
   color: #1a7f37;
-  border-color: #1a7f37;
 }
 
 .repo-counts {
@@ -1960,6 +2256,14 @@ defineExpose({
   color: #f85149;
 }
 
+/* Dark theme skeleton styles */
+.dark-theme .skeleton-icon-circle,
+.dark-theme .skeleton-number,
+.dark-theme .skeleton-title,
+.dark-theme .skeleton-meta-line {
+  background: #373e47;
+}
+
 .dark-theme .result-item {
   border-bottom-color: #373e47;
 }
@@ -1979,7 +2283,9 @@ defineExpose({
 
 .dark-theme .result-number,
 .dark-theme .result-meta,
-.dark-theme .repo-parent {
+.dark-theme .repo-parent,
+.dark-theme .repo-meta-left,
+.dark-theme .repo-meta-right {
   color: #768390;
 }
 
@@ -2031,7 +2337,6 @@ defineExpose({
 
 .dark-theme .count-badge-inline.prs {
   color: #56d364;
-  border-color: #56d364;
 }
 
 .dark-theme .non-indexed-separator {
