@@ -5,6 +5,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import CommandPalette from './components/CommandPalette.vue';
+import type { SearchResultItem } from '@/src/composables/useUnifiedSearch';
 
 const commandPaletteRef = ref<InstanceType<typeof CommandPalette> | null>(null);
 
@@ -16,8 +17,17 @@ function toggle() {
   commandPaletteRef.value?.toggle();
 }
 
-// Expose toggle method to parent
+/**
+ * Handle cache update from background script
+ * Called when background finishes updating cache with fresh results
+ */
+function handleCacheUpdate(results: SearchResultItem[]) {
+  commandPaletteRef.value?.handleCacheUpdate(results);
+}
+
+// Expose methods to parent
 defineExpose({
   toggle,
+  handleCacheUpdate,
 });
 </script>

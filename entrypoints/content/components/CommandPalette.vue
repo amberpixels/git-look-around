@@ -1235,6 +1235,18 @@ async function toggle() {
 }
 
 /**
+ * Handle cache update from background script
+ * Only update UI if palette is currently open and showing results
+ */
+function handleCacheUpdate(results: SearchResultItem[]) {
+  // Only update if palette is open
+  if (panelMode.value === 'HIDDEN') return;
+
+  console.log('[CommandPalette] Received cache update with', results.length, 'results');
+  rawSearchResults.value = results;
+}
+
+/**
  * Toggle "Only My Contributions" filter
  */
 function toggleMyContributionsFilter() {
@@ -1494,6 +1506,7 @@ defineExpose({
   show,
   hide,
   toggle,
+  handleCacheUpdate,
 });
 </script>
 

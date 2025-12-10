@@ -2,6 +2,7 @@ import { createApp } from 'vue';
 import App from './App.vue';
 import { MessageType } from '@/src/messages/types';
 import type { ExtensionMessage } from '@/src/messages/types';
+import type { SearchResultItem } from '@/src/composables/useUnifiedSearch';
 import { debugWarn, initDebugMode } from '@/src/utils/debug';
 
 /**
@@ -145,6 +146,8 @@ export default defineContentScript({
     browser.runtime.onMessage.addListener((message: ExtensionMessage) => {
       if (message.type === MessageType.TOGGLE_OVERLAY) {
         vm.toggle();
+      } else if (message.type === MessageType.CACHE_UPDATED) {
+        vm.handleCacheUpdate(message.payload as SearchResultItem[]);
       }
     });
 

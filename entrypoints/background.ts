@@ -22,6 +22,29 @@ import type { SearchableEntity, SearchResultItem } from '@/src/composables/useUn
 import { useSearchCache } from '@/src/composables/useSearchCache';
 
 /**
+ * Check if search results have meaningfully changed (order or presence of items)
+ * Ignores metadata like timestamps, scores, etc.
+ */
+function hasResultsOrderChanged(
+  oldResults: SearchResultItem[],
+  newResults: SearchResultItem[],
+): boolean {
+  if (oldResults.length !== newResults.length) return true;
+
+  for (let i = 0; i < oldResults.length; i++) {
+    const oldItem = oldResults[i];
+    const newItem = newResults[i];
+
+    // Compare identity: type + entityId (unique identifier)
+    if (oldItem.type !== newItem.type || oldItem.entityId !== newItem.entityId) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Determine which result should be cached as "first result"
  * Takes into account quick-switcher logic that swaps current repo
  */
@@ -78,6 +101,9 @@ function extractContributors(
 
 export default defineBackground(() => {
   console.warn('[Background] Gitjump background initialized', { id: browser.runtime.id });
+
+  // Cache generation counter to prevent stale updates
+  let cacheGeneration = 0;
 
   // Initialize search cache
   const {
@@ -179,8 +205,10 @@ export default defineBackground(() => {
               entityId: number;
             };
             await recordVisit(type, entityId);
-            // Clear cached search results so next search shows updated visit times
+            // Clear cached search results and bump generation to invalidate in-flight updates
             await clearSearchResultsCache();
+            cacheGeneration++;
+            console.log('[Background] Cache cleared, generation bumped to', cacheGeneration);
             sendResponse({ success: true });
             break;
           }
@@ -221,34 +249,81 @@ export default defineBackground(() => {
                 console.log('[Background] Returning cached search results:', cachedResults.length);
                 sendResponse({ success: true, data: cachedResults, cacheSaved: false });
 
-                // Keep service worker alive and update cache in background
-                // Don't use IIFE - directly await so service worker stays alive
-                const cachedEntities = await loadCache();
-                let entities: SearchableEntity[];
+                // Capture current generation for this background update
+                const updateGeneration = cacheGeneration;
+                console.log(
+                  '[Background] Starting background cache update (gen',
+                  updateGeneration,
+                  ')',
+                );
 
-                if (cachedEntities) {
-                  entities = cachedEntities;
-                } else {
-                  const repos = await getAllRepos();
-                  const indexedRepos = repos.filter((repo) => repo.indexed);
-                  entities = await Promise.all(
-                    indexedRepos.map(async (repo) => {
-                      const [issues, prs] = await Promise.all([
-                        getIssuesByRepo(repo.id),
-                        getPullRequestsByRepo(repo.id),
-                      ]);
-                      return { repo, issues, prs };
-                    }),
+                // Keep service worker alive and update cache in background
+                // ALWAYS fetch fresh from IndexedDB (don't use cached entities)
+                // to ensure visit tracking updates are reflected
+                const repos = await getAllRepos();
+                const indexedRepos = repos.filter((repo) => repo.indexed);
+                const entities = await Promise.all(
+                  indexedRepos.map(async (repo) => {
+                    const [issues, prs] = await Promise.all([
+                      getIssuesByRepo(repo.id),
+                      getPullRequestsByRepo(repo.id),
+                    ]);
+                    return { repo, issues, prs };
+                  }),
+                );
+                await saveCache(entities);
+
+                // Check if cache was cleared while we were fetching
+                if (cacheGeneration !== updateGeneration) {
+                  console.log(
+                    '[Background] Cache generation changed (',
+                    updateGeneration,
+                    '→',
+                    cacheGeneration,
+                    '), skipping stale cache update',
                   );
-                  await saveCache(entities);
+                  break;
                 }
 
                 const { searchResults, setEntities } = useUnifiedSearch(currentUsername);
                 await setEntities(entities);
                 const freshResults = searchResults.value('');
 
+                // Final check before saving
+                if (cacheGeneration !== updateGeneration) {
+                  console.log(
+                    '[Background] Cache generation changed before save, skipping stale update',
+                  );
+                  break;
+                }
+
                 // Save fresh results, first result, and contributors
-                console.log('[Background] Updating cache with fresh results');
+                console.log(
+                  '[Background] Updating cache with fresh results (gen',
+                  updateGeneration,
+                  ')',
+                );
+
+                // Check if results order changed compared to what we returned
+                if (hasResultsOrderChanged(cachedResults, freshResults)) {
+                  console.log('[Background] Results order changed, notifying content script');
+                  // Notify all tabs that cache was updated
+                  browser.tabs.query({}).then((tabs) => {
+                    tabs.forEach((tab) => {
+                      if (tab.id) {
+                        browser.tabs
+                          .sendMessage(tab.id, {
+                            type: MessageType.CACHE_UPDATED,
+                            payload: freshResults,
+                          })
+                          .catch(() => {
+                            // Tab might not have content script, ignore
+                          });
+                      }
+                    });
+                  });
+                }
+
                 await saveSearchResults(freshResults);
                 const contributors = extractContributors(freshResults, currentUsername);
                 await saveContributors(contributors);
@@ -263,6 +338,13 @@ export default defineBackground(() => {
             }
 
             // No cached results or non-empty query - do full fetch
+            // Bump generation to cancel any in-flight background cache updates
+            cacheGeneration++;
+            console.log(
+              '[Background] Starting fresh search, generation bumped to',
+              cacheGeneration,
+            );
+
             const cachedEntities = await loadCache();
 
             let entities: SearchableEntity[];
@@ -378,32 +460,103 @@ export default defineBackground(() => {
                 );
                 sendResponse({ success: true, data: debugResults, cacheSaved: false });
 
-                // Keep service worker alive and update cache in background
-                const cachedEntities = await loadCache();
-                let entities: SearchableEntity[];
+                // Capture current generation for this background update
+                const updateGeneration = cacheGeneration;
+                console.log(
+                  '[Background] [DEBUG_SEARCH] Starting background cache update (gen',
+                  updateGeneration,
+                  ')',
+                );
 
-                if (cachedEntities) {
-                  entities = cachedEntities;
-                } else {
-                  const repos = await getAllRepos();
-                  const indexedRepos = repos.filter((repo) => repo.indexed);
-                  entities = await Promise.all(
-                    indexedRepos.map(async (repo) => {
-                      const [issues, prs] = await Promise.all([
-                        getIssuesByRepo(repo.id),
-                        getPullRequestsByRepo(repo.id),
-                      ]);
-                      return { repo, issues, prs };
-                    }),
+                // Keep service worker alive and update cache in background
+                // ALWAYS fetch fresh from IndexedDB (don't use cached entities)
+                // to ensure visit tracking updates are reflected
+                const repos = await getAllRepos();
+                const indexedRepos = repos.filter((repo) => repo.indexed);
+                const entities = await Promise.all(
+                  indexedRepos.map(async (repo) => {
+                    const [issues, prs] = await Promise.all([
+                      getIssuesByRepo(repo.id),
+                      getPullRequestsByRepo(repo.id),
+                    ]);
+                    return { repo, issues, prs };
+                  }),
+                );
+                await saveCache(entities);
+
+                // Check if cache was cleared while we were fetching
+                if (cacheGeneration !== updateGeneration) {
+                  console.log(
+                    '[Background] [DEBUG_SEARCH] Cache generation changed, skipping stale update',
                   );
-                  await saveCache(entities);
+                  break;
                 }
 
                 const { searchResults, setEntities } = useUnifiedSearch(currentUsername);
                 await setEntities(entities);
                 const freshResults = searchResults.value('');
 
-                console.log('[Background] [DEBUG_SEARCH] Updating cache with fresh results');
+                // Final check before saving
+                if (cacheGeneration !== updateGeneration) {
+                  console.log(
+                    '[Background] [DEBUG_SEARCH] Cache generation changed before save, skipping',
+                  );
+                  break;
+                }
+
+                console.log(
+                  '[Background] [DEBUG_SEARCH] Updating cache with fresh results (gen',
+                  updateGeneration,
+                  ')',
+                );
+
+                // Check if results order changed compared to what we returned
+                // Strip debug info before comparison
+                const cachedResultsWithoutDebug = cachedResults.map((r) => {
+                  const { _debug, ...rest } = r as SearchResultItem & { _debug?: unknown };
+                  return rest;
+                });
+                if (hasResultsOrderChanged(cachedResultsWithoutDebug, freshResults)) {
+                  console.log(
+                    '[Background] [DEBUG_SEARCH] Results order changed, notifying content script',
+                  );
+                  // Add debug info to fresh results before sending
+                  const debugFreshResults = freshResults.map((r) => ({
+                    ...r,
+                    _debug: {
+                      lastVisitedAt: r.lastVisitedAt,
+                      lastVisitedAtFormatted: r.lastVisitedAt
+                        ? new Date(r.lastVisitedAt).toISOString()
+                        : 'never',
+                      score: r.score,
+                      bucket: r.lastVisitedAt ? 'visited' : 'never-visited',
+                      isMine: r.isMine,
+                      recentlyContributed: r.recentlyContributedByMe,
+                      state: r.state,
+                      updatedAt: r.updatedAt,
+                      updatedAtFormatted: r.updatedAt
+                        ? new Date(r.updatedAt).toISOString()
+                        : 'unknown',
+                    },
+                  }));
+
+                  // Notify all tabs that cache was updated
+                  browser.tabs.query({}).then((tabs) => {
+                    tabs.forEach((tab) => {
+                      if (tab.id) {
+                        browser.tabs
+                          .sendMessage(tab.id, {
+                            type: MessageType.CACHE_UPDATED,
+                            payload: debugFreshResults,
+                          })
+                          .catch(() => {
+                            // Tab might not have content script, ignore
+                          });
+                      }
+                    });
+                  });
+                }
+
                 await saveSearchResults(freshResults);
                 const contributors = extractContributors(freshResults, currentUsername);
                 await saveContributors(contributors);
@@ -421,6 +574,13 @@ export default defineBackground(() => {
             }
 
             // No cached results - do full fetch
+            // Bump generation to cancel any in-flight background cache updates
+            cacheGeneration++;
+            console.log(
+              '[Background] [DEBUG_SEARCH] Starting fresh search, generation bumped to',
+              cacheGeneration,
+            );
+
             const cachedEntitiesDebug = await loadCache();
 
             let entities: SearchableEntity[];

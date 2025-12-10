@@ -15,6 +15,7 @@ export const MessageType = {
   SET_QUICK_CHECK_IDLE: 'SET_QUICK_CHECK_IDLE',
   SEARCH: 'SEARCH',
   DEBUG_SEARCH: 'DEBUG_SEARCH',
+  CACHE_UPDATED: 'CACHE_UPDATED',
 } as const;
 
 export type MessageType = (typeof MessageType)[keyof typeof MessageType];
