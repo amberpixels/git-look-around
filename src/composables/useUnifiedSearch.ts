@@ -28,6 +28,7 @@ export interface SearchResultItem {
   score: number; // Search relevance score (higher = better)
   lastVisitedAt?: number;
   updatedAt?: number;
+  closedAt?: number; // Timestamp when PR/Issue was closed (null if open)
   // Flags for sorting
   isMine?: boolean; // Authored by current user (PR/Issue) or Owned by current user (Repo)
   recentlyContributedByMe?: boolean; // Contributed to in last 2 months
@@ -258,6 +259,7 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
             score: matchScore,
             lastVisitedAt: pr.last_visited_at,
             updatedAt: new Date(pr.updated_at).getTime(),
+            closedAt: pr.closed_at ? new Date(pr.closed_at).getTime() : undefined,
             isMine: currentUser ? pr.user.login === currentUser : false,
             recentlyContributedByMe: false, // We don't track per-PR contribution dates yet
           });
@@ -290,6 +292,7 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
             score: matchScore,
             lastVisitedAt: issue.last_visited_at,
             updatedAt: new Date(issue.updated_at).getTime(),
+            closedAt: issue.closed_at ? new Date(issue.closed_at).getTime() : undefined,
             isMine: currentUser ? issue.user.login === currentUser : false,
             recentlyContributedByMe: false, // We don't track per-issue contribution dates yet
           });
@@ -318,12 +321,17 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
       if (hasVisitedA && !hasVisitedB) return -1; // A visited, B not → A first
       if (!hasVisitedA && hasVisitedB) return 1; // B visited, A not → B first
 
-      // PRIORITY 2: Both visited → sort by visit time DESC (most recent first)
+      // PRIORITY 2: Both visited AND user is searching → use search score first
+      if (hasVisitedA && hasVisitedB && hasQuery && a.score !== b.score) {
+        return b.score - a.score; // Higher score = better match
+      }
+
+      // PRIORITY 3: Both visited (no query or same score) → sort by visit time DESC
       if (hasVisitedA && hasVisitedB) {
         return b.lastVisitedAt! - a.lastVisitedAt!;
       }
 
-      // PRIORITY 3: Both never-visited → use search score (text match quality)
+      // PRIORITY 4: Both never-visited → use search score (text match quality)
       if (hasQuery && a.score !== b.score) {
         return b.score - a.score;
       }
@@ -358,8 +366,49 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
    */
   const searchResults = computed(() => {
     return (query: string = '') => {
+      const hasQuery = !!query.trim();
       const results = buildSearchResults(query);
-      return sortResults(results, !!query.trim());
+
+      // Filter out old closed PRs/Issues when actively searching
+      let filteredResults = results;
+      if (hasQuery) {
+        const now = Date.now();
+
+        // Calculate today's midnight in local timezone
+        const todayMidnight = new Date();
+        todayMidnight.setHours(0, 0, 0, 0);
+        const todayMidnightTimestamp = todayMidnight.getTime();
+
+        // 12 hours ago
+        const twelveHoursAgo = now - 12 * 60 * 60 * 1000;
+
+        filteredResults = results.filter((item) => {
+          // Keep repos (not PRs/Issues)
+          if (item.type !== 'pr' && item.type !== 'issue') return true;
+
+          // Keep if open
+          if (item.state === 'open') return true;
+
+          // Keep if merged (merged PRs are relevant)
+          if (item.type === 'pr' && item.merged) return true;
+
+          // For closed PRs/Issues: check if closed recently using closedAt
+          // (1) Closed today (after today's midnight) OR (2) Closed within last 12 hours
+          if (item.closedAt) {
+            const closedAfterTodayMidnight = item.closedAt >= todayMidnightTimestamp;
+            const closedWithinLast12Hours = item.closedAt >= twelveHoursAgo;
+
+            if (closedAfterTodayMidnight || closedWithinLast12Hours) {
+              return true;
+            }
+          }
+
+          // Filter out old closed PRs/Issues
+          return false;
+        });
+      }
+
+      return sortResults(filteredResults, hasQuery);
     };
   });
 
