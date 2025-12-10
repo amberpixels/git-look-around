@@ -50,12 +50,44 @@ function getFirstResultToCache(
   return results[0];
 }
 
+/**
+ * Extract top 2 contributors (besides current user) from results
+ */
+function extractContributors(
+  results: SearchResultItem[],
+  currentUsername: string | undefined,
+): string[] {
+  if (!currentUsername) return [];
+
+  const userCounts = new Map<string, number>();
+
+  results.forEach((item) => {
+    if (item.type === 'pr' || item.type === 'issue') {
+      const author = item.user?.login;
+      if (author && author !== currentUsername) {
+        userCounts.set(author, (userCounts.get(author) || 0) + 1);
+      }
+    }
+  });
+
+  return Array.from(userCounts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 2)
+    .map(([username]) => username);
+}
+
 export default defineBackground(() => {
   console.warn('[Background] Gitjump background initialized', { id: browser.runtime.id });
 
   // Initialize search cache
-  const { loadCache, saveCache, saveFirstResult, loadSearchResults, saveSearchResults } =
-    useSearchCache();
+  const {
+    loadCache,
+    saveCache,
+    saveFirstResult,
+    loadSearchResults,
+    saveSearchResults,
+    saveContributors,
+  } = useSearchCache();
 
   // Initialize sync system
   (async () => {
@@ -212,9 +244,11 @@ export default defineBackground(() => {
                 await setEntities(entities);
                 const freshResults = searchResults.value('');
 
-                // Save fresh results and first result
+                // Save fresh results, first result, and contributors
                 console.log('[Background] Updating cache with fresh results');
                 await saveSearchResults(freshResults);
+                const contributors = extractContributors(freshResults, currentUsername);
+                await saveContributors(contributors);
                 const firstResultToCache = getFirstResultToCache(freshResults, currentRepoName);
                 if (firstResultToCache) {
                   await saveFirstResult(firstResultToCache);
@@ -269,6 +303,8 @@ export default defineBackground(() => {
                   await saveFirstResult(firstResultToCache);
                 }
                 await saveSearchResults(results);
+                const contributors = extractContributors(results, currentUsername);
+                await saveContributors(contributors);
                 cacheSaved = true;
               } catch (err) {
                 console.error('[Background] Failed to save first result cache:', err);
@@ -366,6 +402,8 @@ export default defineBackground(() => {
 
                 console.log('[Background] [DEBUG_SEARCH] Updating cache with fresh results');
                 await saveSearchResults(freshResults);
+                const contributors = extractContributors(freshResults, currentUsername);
+                await saveContributors(contributors);
                 const firstResultToCache = getFirstResultToCache(freshResults, currentRepoName);
                 if (firstResultToCache) {
                   await saveFirstResult(firstResultToCache);
@@ -423,6 +461,8 @@ export default defineBackground(() => {
                   await saveFirstResult(firstResultToCache);
                 }
                 await saveSearchResults(results);
+                const contributors = extractContributors(results, currentUsername);
+                await saveContributors(contributors);
                 cacheSaved = true;
               } catch (err) {
                 console.error(
