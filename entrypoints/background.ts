@@ -208,7 +208,6 @@ export default defineBackground(() => {
             // Clear cached search results and bump generation to invalidate in-flight updates
             await clearSearchResultsCache();
             cacheGeneration++;
-            console.log('[Background] Cache cleared, generation bumped to', cacheGeneration);
             sendResponse({ success: true });
             break;
           }
@@ -245,17 +244,11 @@ export default defineBackground(() => {
             // For empty queries, try to return cached results immediately
             if (!query) {
               const cachedResults = await loadSearchResults();
-              if (cachedResults) {
-                console.log('[Background] Returning cached search results:', cachedResults.length);
+              if (cachedResults && cachedResults.length > 0) {
                 sendResponse({ success: true, data: cachedResults, cacheSaved: false });
 
                 // Capture current generation for this background update
                 const updateGeneration = cacheGeneration;
-                console.log(
-                  '[Background] Starting background cache update (gen',
-                  updateGeneration,
-                  ')',
-                );
 
                 // Keep service worker alive and update cache in background
                 // ALWAYS fetch fresh from IndexedDB (don't use cached entities)
@@ -275,13 +268,6 @@ export default defineBackground(() => {
 
                 // Check if cache was cleared while we were fetching
                 if (cacheGeneration !== updateGeneration) {
-                  console.log(
-                    '[Background] Cache generation changed (',
-                    updateGeneration,
-                    '→',
-                    cacheGeneration,
-                    '), skipping stale cache update',
-                  );
                   break;
                 }
 
@@ -291,22 +277,11 @@ export default defineBackground(() => {
 
                 // Final check before saving
                 if (cacheGeneration !== updateGeneration) {
-                  console.log(
-                    '[Background] Cache generation changed before save, skipping stale update',
-                  );
                   break;
                 }
 
-                // Save fresh results, first result, and contributors
-                console.log(
-                  '[Background] Updating cache with fresh results (gen',
-                  updateGeneration,
-                  ')',
-                );
-
                 // Check if results order changed compared to what we returned
                 if (hasResultsOrderChanged(cachedResults, freshResults)) {
-                  console.log('[Background] Results order changed, notifying content script');
                   // Notify all tabs that cache was updated
                   browser.tabs.query({}).then((tabs) => {
                     tabs.forEach((tab) => {
@@ -330,7 +305,6 @@ export default defineBackground(() => {
                 const firstResultToCache = getFirstResultToCache(freshResults, currentRepoName);
                 if (firstResultToCache) {
                   await saveFirstResult(firstResultToCache);
-                  console.log('[Background] Updated first result cache:', firstResultToCache.title);
                 }
 
                 break;
@@ -340,17 +314,12 @@ export default defineBackground(() => {
             // No cached results or non-empty query - do full fetch
             // Bump generation to cancel any in-flight background cache updates
             cacheGeneration++;
-            console.log(
-              '[Background] Starting fresh search, generation bumped to',
-              cacheGeneration,
-            );
 
             const cachedEntities = await loadCache();
 
             let entities: SearchableEntity[];
 
-            if (cachedEntities) {
-              // Use cached data immediately
+            if (cachedEntities && cachedEntities.length > 0) {
               entities = cachedEntities;
             } else {
               // Get all repos
@@ -399,7 +368,7 @@ export default defineBackground(() => {
             sendResponse({ success: true, data: results, cacheSaved });
 
             // Update cache in background if we used cached data
-            if (cachedEntities) {
+            if (cachedEntities && cachedEntities.length > 0) {
               (async () => {
                 try {
                   const repos = await getAllRepos();
@@ -433,7 +402,7 @@ export default defineBackground(() => {
             // For empty queries, try to return cached results immediately
             if (!query) {
               const cachedResults = await loadSearchResults();
-              if (cachedResults) {
+              if (cachedResults && cachedResults.length > 0) {
                 // Add debug info to cached results
                 const debugResults = cachedResults.map((r) => ({
                   ...r,
@@ -576,17 +545,12 @@ export default defineBackground(() => {
             // No cached results - do full fetch
             // Bump generation to cancel any in-flight background cache updates
             cacheGeneration++;
-            console.log(
-              '[Background] [DEBUG_SEARCH] Starting fresh search, generation bumped to',
-              cacheGeneration,
-            );
 
             const cachedEntitiesDebug = await loadCache();
 
             let entities: SearchableEntity[];
 
-            if (cachedEntitiesDebug) {
-              // Use cached data immediately
+            if (cachedEntitiesDebug && cachedEntitiesDebug.length > 0) {
               entities = cachedEntitiesDebug;
             } else {
               // Get all repos
@@ -628,10 +592,7 @@ export default defineBackground(() => {
                 await saveContributors(contributors);
                 cacheSaved = true;
               } catch (err) {
-                console.error(
-                  '[Background] [DEBUG_SEARCH] Failed to save first result cache:',
-                  err,
-                );
+                console.error('[Background] Failed to save first result cache:', err);
               }
             }
 

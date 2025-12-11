@@ -139,8 +139,9 @@ export async function shouldRunSync(): Promise<boolean> {
  *
  * A repo is "of interest" if:
  * 1. Manually indexed (indexed_manually = true) - always included
- * 2. You're a contributor (me_contributing = true) - even if old/inactive
- * 3. Has recent activity (pushed within last 6 months)
+ * 2. You own the repo (owner.login === currentUser) - your personal repos
+ * 3. You're a contributor (me_contributing = true) - even if old/inactive
+ * 4. Has recent activity (pushed within last 6 months)
  *
  * Note: We'll apply a limit of MAX_INDEXED_REPOS to avoid excessive syncing
  */
@@ -148,9 +149,15 @@ function isRepoOfInterest(repo: {
   pushed_at: string | null;
   me_contributing?: boolean;
   indexed_manually?: boolean;
+  is_owned_by_me?: boolean;
 }): boolean {
   // Manual override always wins
   if (repo.indexed_manually) {
+    return true;
+  }
+
+  // You own the repo = always of interest (personal repos)
+  if (repo.is_owned_by_me) {
     return true;
   }
 
@@ -239,11 +246,15 @@ export async function runSync(): Promise<void> {
         const existingRepo = await getRepo(repo.id);
         const indexedManually = existingRepo?.indexed_manually || false;
 
+        // Check if user owns this repo (personal repos)
+        const isOwnedByMe = accountLogin ? repo.owner.login === accountLogin : false;
+
         // Determine if this is a "repo of interest"
         const indexed = isRepoOfInterest({
           pushed_at: repo.pushed_at,
           me_contributing: meContributing,
           indexed_manually: indexedManually,
+          is_owned_by_me: isOwnedByMe,
         });
 
         return {
