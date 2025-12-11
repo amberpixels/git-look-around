@@ -28,6 +28,7 @@ export interface GitHubRepo {
   owner: {
     login: string;
   };
+  parent?: GitHubRepo; // Present when repo is a fork
   // Date fields
   created_at: string; // ISO 8601 format
   updated_at: string; // ISO 8601 format
@@ -158,6 +159,8 @@ export interface GitHubPullRequest {
 export interface RepoRecord extends GitHubRepo {
   // Internal tracking
   last_fetched_at: number; // Timestamp when we last synced this repo
+  is_parent_of_my_fork?: boolean; // True when this repo is the upstream of a personal fork
+  prs_only_my_involvement?: boolean; // Only sync PRs where I'm involved (author/assignee/reviewer)
 
   // Visit tracking (for ranking/sorting)
   visit_count?: number; // Total number of visits

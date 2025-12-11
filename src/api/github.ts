@@ -8,6 +8,7 @@ import type { GitHubRepo, GitHubIssue, GitHubPullRequest, GitHubOrg } from '@/sr
 
 const GITHUB_API_BASE = 'https://api.github.com';
 const RATE_LIMIT_META_KEY = 'rate_limit_info';
+let userInvolvedSearchDisabled = false; // Disable search-based PR fetch once it fails in a session
 
 /**
  * Rate limit information
@@ -84,6 +85,15 @@ export async function getLastRateLimit(): Promise<RateLimitInfo | null> {
  */
 export async function getAuthenticatedUser() {
   const response = await githubFetch('/user');
+  return response.json();
+}
+
+/**
+ * Get repository details by full name (owner/repo)
+ * Useful to resolve parent info for forks
+ */
+export async function getRepoByFullName(fullName: string): Promise<GitHubRepo> {
+  const response = await githubFetch(`/repos/${fullName}`);
   return response.json();
 }
 
@@ -189,6 +199,114 @@ export async function getRepoPullRequests(
 }
 
 /**
+ * Get pull requests where the user is involved (author, assignee, or reviewer)
+ * Uses the search API to avoid pulling every PR from large upstream repos
+ */
+export async function getUserInvolvedPullRequests(
+  owner: string,
+  repo: string,
+  username: string,
+): Promise<GitHubPullRequest[]> {
+  const prNumbers = new Set<number>();
+  let searchErrored = false;
+
+  if (userInvolvedSearchDisabled) {
+    console.warn(
+      `[GitHub API] Skipping search (disabled after previous failures); using fallback for ${owner}/${repo}`,
+    );
+    return getRepoPullRequests(owner, repo).then((allPRs) =>
+      allPRs.filter((pr) => isUserInvolvedInPR(pr, username)),
+    );
+  }
+
+  async function searchPRs(query: string): Promise<void> {
+    let page = 1;
+    let hasMore = true;
+    let matchesThisQuery = 0;
+
+    while (hasMore) {
+      const response = await githubFetch(
+        `/search/issues?q=${encodeURIComponent(query)}&per_page=100&page=${page}`,
+      );
+      const data = await response.json();
+      const items = (data.items || []) as Array<{ number: number }>;
+
+      for (const item of items) {
+        if (item?.number) {
+          matchesThisQuery++;
+          prNumbers.add(item.number);
+        }
+      }
+
+      const linkHeader = response.headers.get('link');
+      hasMore = linkHeader?.includes('rel="next"') ?? false;
+      page++;
+    }
+
+    console.warn(
+      `[GitHub API] Search PRs query="${query}" -> found ${matchesThisQuery} (running total: ${prNumbers.size})`,
+    );
+  }
+
+  // Collect PR numbers from involvement queries
+  const baseQuery = `repo:${owner}/${repo}+is:pr`;
+  // Use narrower queries (author/assignee/review-requested) to avoid 1000-result search caps on large repos
+  const queries = [
+    `${baseQuery}+is:open+author:${username}`,
+    `${baseQuery}+is:closed+author:${username}`,
+    `${baseQuery}+is:open+assignee:${username}`,
+    `${baseQuery}+is:closed+assignee:${username}`,
+    `${baseQuery}+is:open+review-requested:${username}`,
+    `${baseQuery}+is:closed+review-requested:${username}`,
+  ];
+
+  for (const query of queries) {
+    try {
+      await searchPRs(query);
+    } catch (error) {
+      searchErrored = true;
+      userInvolvedSearchDisabled = true; // Disable for rest of session to avoid repeated 422s
+      console.warn(
+        `[GitHub API] Search PRs query="${query}" failed, will consider fallback. Error:`,
+        error,
+      );
+      break;
+    }
+  }
+
+  if (prNumbers.size > 0) {
+    console.warn(
+      `[GitHub API] Fetching full PR details for ${prNumbers.size} involved PRs in ${owner}/${repo}`,
+    );
+
+    // Fetch full PR details for each matched number
+    const prs = await Promise.all(
+      Array.from(prNumbers).map(async (number) => {
+        const response = await githubFetch(`/repos/${owner}/${repo}/pulls/${number}`);
+        return response.json() as Promise<GitHubPullRequest>;
+      }),
+    );
+
+    return prs;
+  }
+
+  // Fallback: search failed or returned nothing—fetch repo PRs and filter for involvement
+  console.warn(
+    `[GitHub API] Falling back to full PR fetch for ${owner}/${repo} (searchErrored=${searchErrored} searchDisabled=${userInvolvedSearchDisabled})`,
+  );
+  const allPRs = await getRepoPullRequests(owner, repo);
+  return allPRs.filter((pr) => isUserInvolvedInPR(pr, username));
+}
+
+function isUserInvolvedInPR(pr: GitHubPullRequest, username: string): boolean {
+  if (pr.user?.login === username) return true;
+  if (pr.assignee?.login === username) return true;
+  if (pr.assignees?.some((assignee) => assignee.login === username)) return true;
+  if (pr.requested_reviewers?.some((reviewer) => reviewer.login === username)) return true;
+  return false;
+}
+
+/**
  * Get user's organizations
  */
 export async function getUserOrganizations(): Promise<GitHubOrg[]> {
@@ -224,7 +342,10 @@ export async function getOrgRepos(orgName: string): Promise<GitHubRepo[]> {
 /**
  * Get all repositories (user repos + all organization repos)
  */
-export async function getAllAccessibleRepos(): Promise<GitHubRepo[]> {
+export async function getAllAccessibleRepos(currentUserLogin?: string): Promise<{
+  repos: GitHubRepo[];
+  personalForkParentRepoIds: number[];
+}> {
   // Fetch user's personal repos
   const userRepos = await getUserRepos();
 
@@ -238,11 +359,39 @@ export async function getAllAccessibleRepos(): Promise<GitHubRepo[]> {
   // Flatten all org repos
   const allOrgRepos = orgReposArrays.flat();
 
+  // Resolve original repos for personal forks so PRs on upstreams are discoverable
+  const personalForks =
+    currentUserLogin != null
+      ? userRepos.filter((repo) => repo.fork && repo.owner.login === currentUserLogin)
+      : [];
+
+  const forkParents = (
+    await Promise.all(
+      personalForks.map(async (fork) => {
+        try {
+          // The list endpoint may include parent; if not, fetch the repo to resolve it
+          if (fork.parent) {
+            return fork.parent;
+          }
+
+          const detailedRepo = await getRepoByFullName(fork.full_name);
+          return detailedRepo.parent || null;
+        } catch (error) {
+          console.warn(`[GitHub API] Failed to resolve parent for fork ${fork.full_name}:`, error);
+          return null;
+        }
+      }),
+    )
+  ).filter((parent): parent is GitHubRepo => parent !== null);
+
   // Combine and deduplicate (user might have forked an org repo)
-  const allRepos = [...userRepos, ...allOrgRepos];
+  const allRepos = [...userRepos, ...allOrgRepos, ...forkParents];
   const uniqueRepos = Array.from(new Map(allRepos.map((repo) => [repo.id, repo])).values());
 
-  return uniqueRepos;
+  return {
+    repos: uniqueRepos,
+    personalForkParentRepoIds: forkParents.map((repo) => repo.id),
+  };
 }
 
 /**

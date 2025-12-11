@@ -7,6 +7,7 @@ import {
   getAllAccessibleRepos,
   getRepoIssues,
   getRepoPullRequests,
+  getUserInvolvedPullRequests,
   getAuthenticatedUser,
   getRecentlyPushedRepos,
   getRecentlyUpdatedPRs,
@@ -150,6 +151,7 @@ function isRepoOfInterest(repo: {
   me_contributing?: boolean;
   indexed_manually?: boolean;
   is_owned_by_me?: boolean;
+  is_parent_of_my_fork?: boolean;
 }): boolean {
   // Manual override always wins
   if (repo.indexed_manually) {
@@ -158,6 +160,11 @@ function isRepoOfInterest(repo: {
 
   // You own the repo = always of interest (personal repos)
   if (repo.is_owned_by_me) {
+    return true;
+  }
+
+  // Upstream of my fork (we need its PRs)
+  if (repo.is_parent_of_my_fork) {
     return true;
   }
 
@@ -220,8 +227,13 @@ export async function runSync(): Promise<void> {
 
     // Step 1: Fetch all repos (user + organizations) and count them
     console.warn('[Sync] Fetching repositories (user + organizations)...');
-    const allRepos = await getAllAccessibleRepos();
-    console.warn(`[Sync] Found ${allRepos.length} total repositories`);
+    const { repos: allRepos, personalForkParentRepoIds } = await getAllAccessibleRepos(
+      accountLogin || undefined,
+    );
+    const forkParentRepoIds = new Set(personalForkParentRepoIds);
+    console.warn(
+      `[Sync] Found ${allRepos.length} total repositories (${forkParentRepoIds.size} upstream(s) of your forks)`,
+    );
 
     // Check contributor status and determine "repos of interest"
     console.warn('[Sync] Checking contributor status and repos of interest...');
@@ -248,6 +260,7 @@ export async function runSync(): Promise<void> {
 
         // Check if user owns this repo (personal repos)
         const isOwnedByMe = accountLogin ? repo.owner.login === accountLogin : false;
+        const isParentOfMyFork = forkParentRepoIds.has(repo.id);
 
         // Determine if this is a "repo of interest"
         const indexed = isRepoOfInterest({
@@ -255,6 +268,7 @@ export async function runSync(): Promise<void> {
           me_contributing: meContributing,
           indexed_manually: indexedManually,
           is_owned_by_me: isOwnedByMe,
+          is_parent_of_my_fork: isParentOfMyFork,
         });
 
         return {
@@ -263,6 +277,8 @@ export async function runSync(): Promise<void> {
           me_contributing: meContributing,
           last_contributed_at: lastContributedAt || undefined,
           indexed_manually: indexedManually,
+          is_parent_of_my_fork: isParentOfMyFork,
+          prs_only_my_involvement: isParentOfMyFork,
           indexed,
         };
       }),
@@ -280,6 +296,10 @@ export async function runSync(): Promise<void> {
         // Manually indexed first
         if (a.indexed_manually && !b.indexed_manually) return -1;
         if (!a.indexed_manually && b.indexed_manually) return 1;
+
+        // Upstream parents of my forks next
+        if (a.is_parent_of_my_fork && !b.is_parent_of_my_fork) return -1;
+        if (!a.is_parent_of_my_fork && b.is_parent_of_my_fork) return 1;
 
         // Contributing repos second
         if (a.me_contributing && !b.me_contributing) return -1;
@@ -365,6 +385,7 @@ export async function runSync(): Promise<void> {
 
         // Build promises array based on preferences
         const promises: Promise<number>[] = [];
+        const shouldLimitToMyPRs = !!(repo.prs_only_my_involvement && accountLogin);
 
         // Fetch issues if enabled
         if (preferences.syncIssues) {
@@ -407,7 +428,10 @@ export async function runSync(): Promise<void> {
         // Fetch PRs if enabled
         if (preferences.syncPullRequests) {
           promises.push(
-            getRepoPullRequests(owner, repoName)
+            (shouldLimitToMyPRs
+              ? getUserInvolvedPullRequests(owner, repoName, accountLogin!)
+              : getRepoPullRequests(owner, repoName)
+            )
               .then((prs) => {
                 const prRecords: PullRequestRecord[] = prs.map((pr) => ({
                   ...pr,
@@ -553,6 +577,8 @@ async function runQuickCheckOnce(): Promise<void> {
 
   try {
     const preferences = await getSyncPreferences();
+    const status = await getSyncStatus();
+    const accountLogin = status.accountLogin || undefined;
 
     // Skip if PRs sync is disabled (we only check PRs in quick-check now)
     if (!preferences.syncPullRequests) {
@@ -584,8 +610,12 @@ async function runQuickCheckOnce(): Promise<void> {
       }
       const [owner, repoName] = parts;
 
-      // Fetch top N recently updated PRs for this repo
-      const recentPRs = await getRecentlyUpdatedPRs(owner, repoName, QUICK_CHECK_PR_LIMIT);
+      const shouldLimitToMyPRs = storedRepo.prs_only_my_involvement && accountLogin;
+
+      // Fetch recently updated PRs for this repo (only mine for fork parents)
+      const recentPRs = shouldLimitToMyPRs
+        ? await getUserInvolvedPullRequests(owner, repoName, accountLogin!)
+        : await getRecentlyUpdatedPRs(owner, repoName, QUICK_CHECK_PR_LIMIT);
 
       // Check if any PR has been updated since our last fetch
       const storedFetchedAt = storedRepo.last_fetched_at || 0;
@@ -615,12 +645,16 @@ async function runQuickCheckOnce(): Promise<void> {
             last_contributed_at: storedRepo.last_contributed_at,
             indexed_manually: storedRepo.indexed_manually,
             indexed: storedRepo.indexed,
+            is_parent_of_my_fork: storedRepo.is_parent_of_my_fork,
+            prs_only_my_involvement: storedRepo.prs_only_my_involvement,
           },
         ]);
 
         // Re-sync all PRs for this repo
         try {
-          const allPRs = await getRepoPullRequests(owner, repoName);
+          const allPRs = shouldLimitToMyPRs
+            ? recentPRs
+            : await getRepoPullRequests(owner, repoName);
           const prRecords: PullRequestRecord[] = allPRs.map((pr) => ({
             ...pr,
             repo_id: apiRepo.id,

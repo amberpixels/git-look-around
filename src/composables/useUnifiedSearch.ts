@@ -197,6 +197,15 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
     return Date.now() - date < TWO_MONTHS_MS;
   }
 
+  function isMyPullRequest(pr: PullRequestRecord, currentUser?: string): boolean {
+    if (!currentUser) return false;
+    if (pr.user.login === currentUser) return true;
+    if (pr.assignee?.login === currentUser) return true;
+    if (pr.assignees?.some((assignee) => assignee.login === currentUser)) return true;
+    if (pr.requested_reviewers?.some((reviewer) => reviewer.login === currentUser)) return true;
+    return false;
+  }
+
   /**
    * Build a flat list of all searchable items
    */
@@ -260,7 +269,7 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
             lastVisitedAt: pr.last_visited_at,
             updatedAt: new Date(pr.updated_at).getTime(),
             closedAt: pr.closed_at ? new Date(pr.closed_at).getTime() : undefined,
-            isMine: currentUser ? pr.user.login === currentUser : false,
+            isMine: isMyPullRequest(pr, currentUser),
             recentlyContributedByMe: false, // We don't track per-PR contribution dates yet
           });
         }
