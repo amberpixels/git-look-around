@@ -4,8 +4,6 @@ import { debugLogSync } from '@/src/utils/debug';
 export interface KeyboardActions {
   moveNext: () => void;
   movePrev: () => void;
-  expand: () => void;
-  collapse: () => void;
   select: (newTab: boolean) => void;
   dismiss: () => void;
   focusInput: () => void;
@@ -58,22 +56,6 @@ export function useKeyboardShortcuts(actions: KeyboardActions, isVisible: () => 
       e.preventDefault();
       e.stopPropagation();
       actions.movePrev();
-      return;
-    }
-
-    if (e.key === 'ArrowRight') {
-      debugLogSync('[Gitjump] Shortcut: ArrowRight');
-      e.preventDefault();
-      e.stopPropagation();
-      actions.expand();
-      return;
-    }
-
-    if (e.key === 'ArrowLeft') {
-      debugLogSync('[Gitjump] Shortcut: ArrowLeft');
-      e.preventDefault();
-      e.stopPropagation();
-      actions.collapse();
       return;
     }
 

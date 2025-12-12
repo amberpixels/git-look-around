@@ -1509,8 +1509,6 @@ useKeyboardShortcuts(
   {
     moveNext: () => moveNext(),
     movePrev: () => movePrev(),
-    expand: () => {}, // No longer used in flat list
-    collapse: () => {}, // No longer used in flat list
     select: (newTab) => navigateToFocusedTarget(newTab),
     tab: () => handleTab(),
     dismiss: async () => {
