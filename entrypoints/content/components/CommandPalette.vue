@@ -280,13 +280,31 @@
                   {{ item.title }}
                 </a>
                 <div class="result-meta">
-                  <img
-                    v-if="item.user"
-                    :src="item.user.avatar_url"
-                    :alt="item.user.login"
-                    :title="`Opened by @${item.user.login}`"
-                    class="user-avatar"
-                  />
+                  <!-- Avatar display: creator or creator->assignee -->
+                  <div v-if="item.user" class="avatar-container">
+                    <!-- Show creator avatar -->
+                    <img
+                      :src="item.user.avatar_url"
+                      :alt="item.user.login"
+                      :title="`Opened by @${item.user.login}`"
+                      class="user-avatar"
+                    />
+                    <!-- Show arrow and assignee avatar if assignee exists and differs from creator -->
+                    <template v-if="item.assignee && item.assignee.login !== item.user.login">
+                      <svg class="avatar-arrow" viewBox="0 0 16 16" width="12" height="12">
+                        <path
+                          fill="currentColor"
+                          d="M8.22 2.97a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06l2.97-2.97H3.75a.75.75 0 0 1 0-1.5h7.44L8.22 4.03a.75.75 0 0 1 0-1.06Z"
+                        />
+                      </svg>
+                      <img
+                        :src="item.assignee.avatar_url"
+                        :alt="item.assignee.login"
+                        :title="`Assigned to @${item.assignee.login}`"
+                        class="user-avatar"
+                      />
+                    </template>
+                  </div>
                   <span v-if="!repoFilter" class="repo-parent"
                     >in {{ formatRepoName(item.repoName) }}</span
                   >
@@ -316,13 +334,31 @@
                   {{ item.title }}
                 </a>
                 <div class="result-meta">
-                  <img
-                    v-if="item.user"
-                    :src="item.user.avatar_url"
-                    :alt="item.user.login"
-                    :title="`Opened by @${item.user.login}`"
-                    class="user-avatar"
-                  />
+                  <!-- Avatar display: creator or creator->assignee -->
+                  <div v-if="item.user" class="avatar-container">
+                    <!-- Show creator avatar -->
+                    <img
+                      :src="item.user.avatar_url"
+                      :alt="item.user.login"
+                      :title="`Opened by @${item.user.login}`"
+                      class="user-avatar"
+                    />
+                    <!-- Show arrow and assignee avatar if assignee exists and differs from creator -->
+                    <template v-if="item.assignee && item.assignee.login !== item.user.login">
+                      <svg class="avatar-arrow" viewBox="0 0 16 16" width="12" height="12">
+                        <path
+                          fill="currentColor"
+                          d="M8.22 2.97a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06l2.97-2.97H3.75a.75.75 0 0 1 0-1.5h7.44L8.22 4.03a.75.75 0 0 1 0-1.06Z"
+                        />
+                      </svg>
+                      <img
+                        :src="item.assignee.avatar_url"
+                        :alt="item.assignee.login"
+                        :title="`Assigned to @${item.assignee.login}`"
+                        class="user-avatar"
+                      />
+                    </template>
+                  </div>
                   <span v-if="!repoFilter" class="repo-parent"
                     >in {{ formatRepoName(item.repoName) }}</span
                   >
@@ -2103,6 +2139,18 @@ defineExpose({
   flex-shrink: 0;
 }
 
+.avatar-container {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.avatar-arrow {
+  flex-shrink: 0;
+  color: #57606a;
+  opacity: 0.6;
+}
+
 .repo-parent {
   color: #57606a;
   font-size: 12px;
@@ -2392,6 +2440,10 @@ defineExpose({
 
 .dark-theme .filter-avatar {
   border-color: #1c2128;
+}
+
+.dark-theme .avatar-arrow {
+  color: #768390;
 }
 
 .dark-theme .status {

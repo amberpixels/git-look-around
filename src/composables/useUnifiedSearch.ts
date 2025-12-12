@@ -21,6 +21,10 @@ export interface SearchResultItem {
     login: string;
     avatar_url: string;
   };
+  assignee?: {
+    login: string;
+    avatar_url: string;
+  } | null;
   // PR-specific
   draft?: boolean;
   merged?: boolean;
@@ -330,6 +334,7 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
             number: pr.number,
             state: pr.state,
             user: pr.user,
+            assignee: pr.assignee,
             draft: pr.draft,
             merged: pr.merged,
             score: matchScore,
@@ -362,6 +367,7 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
             number: issue.number,
             state: issue.state,
             user: issue.user,
+            assignee: issue.assignee,
             score: matchScore,
             lastVisitedAt: issue.last_visited_at,
             updatedAt: new Date(issue.updated_at).getTime(),
