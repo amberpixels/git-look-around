@@ -254,7 +254,7 @@ export async function runSync(): Promise<void> {
           console.warn(`[Sync] Could not check contributor status for ${repo.full_name}:`, err);
         }
 
-        // Get existing repo to preserve indexed_manually flag
+        // Get existing repo to preserve indexed_manually flag AND visit tracking
         const existingRepo = await getRepo(repo.id);
         const indexedManually = existingRepo?.indexed_manually || false;
 
@@ -280,6 +280,10 @@ export async function runSync(): Promise<void> {
           is_parent_of_my_fork: isParentOfMyFork,
           prs_only_my_involvement: isParentOfMyFork,
           indexed,
+          // Preserve visit tracking from existing record
+          visit_count: existingRepo?.visit_count,
+          last_visited_at: existingRepo?.last_visited_at,
+          first_visited_at: existingRepo?.first_visited_at,
         };
       }),
     );
@@ -391,12 +395,24 @@ export async function runSync(): Promise<void> {
         if (preferences.syncIssues) {
           promises.push(
             getRepoIssues(owner, repoName, 'all')
-              .then((issues) => {
-                const issueRecords: IssueRecord[] = issues.map((issue) => ({
-                  ...issue,
-                  repo_id: repo.id,
-                  last_fetched_at: Date.now(),
-                }));
+              .then(async (issues) => {
+                // Get existing issues to preserve visit tracking
+                const { getIssuesByRepo: getExistingIssues } = await import('@/src/storage/db');
+                const existingIssues = await getExistingIssues(repo.id);
+                const existingIssuesMap = new Map(existingIssues.map((i) => [i.id, i]));
+
+                const issueRecords: IssueRecord[] = issues.map((issue) => {
+                  const existing = existingIssuesMap.get(issue.id);
+                  return {
+                    ...issue,
+                    repo_id: repo.id,
+                    last_fetched_at: Date.now(),
+                    // Preserve visit tracking from existing record
+                    visit_count: existing?.visit_count,
+                    last_visited_at: existing?.last_visited_at,
+                    first_visited_at: existing?.first_visited_at,
+                  };
+                });
                 return saveIssues(issueRecords).then(() => {
                   issuesCount++;
                   console.warn(`[Sync] ✓ ${repo.full_name}: ${issues.length} issues`);
@@ -432,13 +448,25 @@ export async function runSync(): Promise<void> {
               ? getUserInvolvedPullRequests(owner, repoName, accountLogin!)
               : getRepoPullRequests(owner, repoName)
             )
-              .then((prs) => {
-                const prRecords: PullRequestRecord[] = prs.map((pr) => ({
-                  ...pr,
-                  merged: pr.merged_at !== null, // Compute merged from merged_at
-                  repo_id: repo.id,
-                  last_fetched_at: Date.now(),
-                }));
+              .then(async (prs) => {
+                // Get existing PRs to preserve visit tracking
+                const { getPullRequestsByRepo: getExistingPRs } = await import('@/src/storage/db');
+                const existingPRs = await getExistingPRs(repo.id);
+                const existingPRsMap = new Map(existingPRs.map((pr) => [pr.id, pr]));
+
+                const prRecords: PullRequestRecord[] = prs.map((pr) => {
+                  const existing = existingPRsMap.get(pr.id);
+                  return {
+                    ...pr,
+                    merged: pr.merged_at !== null, // Compute merged from merged_at
+                    repo_id: repo.id,
+                    last_fetched_at: Date.now(),
+                    // Preserve visit tracking from existing record
+                    visit_count: existing?.visit_count,
+                    last_visited_at: existing?.last_visited_at,
+                    first_visited_at: existing?.first_visited_at,
+                  };
+                });
                 return savePullRequests(prRecords).then(() => {
                   prsCount++;
                   console.warn(`[Sync] ✓ ${repo.full_name}: ${prs.length} PRs`);
@@ -637,7 +665,7 @@ async function runQuickCheckOnce(): Promise<void> {
           `[QuickCheck] Detected ${updatedPRs.length} updated PR(s) in ${apiRepo.full_name}, re-syncing...`,
         );
 
-        // Update repo record
+        // Update repo record (preserve visit tracking)
         await saveRepos([
           {
             ...apiRepo,
@@ -648,6 +676,10 @@ async function runQuickCheckOnce(): Promise<void> {
             indexed: storedRepo.indexed,
             is_parent_of_my_fork: storedRepo.is_parent_of_my_fork,
             prs_only_my_involvement: storedRepo.prs_only_my_involvement,
+            // Preserve visit tracking
+            visit_count: storedRepo.visit_count,
+            last_visited_at: storedRepo.last_visited_at,
+            first_visited_at: storedRepo.first_visited_at,
           },
         ]);
 
@@ -656,12 +688,25 @@ async function runQuickCheckOnce(): Promise<void> {
           const allPRs = shouldLimitToMyPRs
             ? recentPRs
             : await getRepoPullRequests(owner, repoName);
-          const prRecords: PullRequestRecord[] = allPRs.map((pr) => ({
-            ...pr,
-            merged: pr.merged_at !== null, // Compute merged from merged_at
-            repo_id: apiRepo.id,
-            last_fetched_at: Date.now(),
-          }));
+
+          // Get existing PRs to preserve visit tracking
+          const { getPullRequestsByRepo: getExistingPRs } = await import('@/src/storage/db');
+          const existingPRs = await getExistingPRs(apiRepo.id);
+          const existingPRsMap = new Map(existingPRs.map((pr) => [pr.id, pr]));
+
+          const prRecords: PullRequestRecord[] = allPRs.map((pr) => {
+            const existing = existingPRsMap.get(pr.id);
+            return {
+              ...pr,
+              merged: pr.merged_at !== null, // Compute merged from merged_at
+              repo_id: apiRepo.id,
+              last_fetched_at: Date.now(),
+              // Preserve visit tracking from existing record
+              visit_count: existing?.visit_count,
+              last_visited_at: existing?.last_visited_at,
+              first_visited_at: existing?.first_visited_at,
+            };
+          });
           await savePullRequests(prRecords);
           console.warn(`[QuickCheck] ✓ Re-synced ${allPRs.length} PRs for ${apiRepo.full_name}`);
         } catch (err) {
