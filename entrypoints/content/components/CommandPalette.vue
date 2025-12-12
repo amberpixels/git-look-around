@@ -836,34 +836,33 @@ function applyQuickSwitcherLogic(results: SearchResultItem[]): SearchResultItem[
 
   const showingPrsOrIssues = preferences.value.syncIssues || preferences.value.syncPullRequests;
 
-  let processedResults: SearchResultItem[];
-
+  // If not showing PRs/Issues, hide current repo completely
   if (!showingPrsOrIssues) {
-    // Hide current repo completely
-    processedResults = realResults.filter((item) => {
+    const processedResults = realResults.filter((item) => {
       if (item.type === 'repo') {
         return item.title !== currentRepoName;
       }
       return item.repoName !== currentRepoName;
     });
-  } else {
-    // Swap 1st and 2nd if 1st is current repo
-    if (realResults.length >= 2) {
-      const first = realResults[0];
-      if (
-        (first.type === 'repo' && first.title === currentRepoName) ||
-        (first.type !== 'repo' && first.repoName === currentRepoName)
-      ) {
-        processedResults = [realResults[1], realResults[0], ...realResults.slice(2)];
-      } else {
-        processedResults = realResults;
-      }
-    } else {
-      processedResults = realResults;
-    }
+    return [...processedResults, ...skeletons];
   }
 
-  // Always append skeletons at the end (they'll be after real results)
+  // Swap 1st and 2nd if 1st is current repo
+  if (realResults.length < 2) {
+    return [...realResults, ...skeletons];
+  }
+
+  const first = realResults[0];
+  const isFirstCurrentRepo =
+    (first.type === 'repo' && first.title === currentRepoName) ||
+    (first.type !== 'repo' && first.repoName === currentRepoName);
+
+  if (!isFirstCurrentRepo) {
+    return [...realResults, ...skeletons];
+  }
+
+  // Swap first and second
+  const processedResults = [realResults[1], realResults[0], ...realResults.slice(2)];
   return [...processedResults, ...skeletons];
 }
 

@@ -281,40 +281,51 @@ export async function recordVisit(type: 'repo' | 'issue' | 'pr', entityId: numbe
   // Update the entity record directly for SPEED
   if (type === 'repo') {
     const repo = await getRepo(entityId);
-    if (repo) {
-      const updatedRepo = {
-        ...repo,
-        visit_count: (repo.visit_count || 0) + 1,
-        last_visited_at: now,
-        first_visited_at: repo.first_visited_at || now,
-      };
-      console.warn(
-        `[recordVisit] Updating repo ${repo.full_name}: visit_count=${updatedRepo.visit_count}, last_visited_at=${new Date(now).toISOString()}`,
-      );
-      await saveRepo(updatedRepo);
-    } else {
+    if (!repo) {
       console.warn(`[recordVisit] Repo with ID ${entityId} not found in database`);
+      return;
     }
-  } else if (type === 'issue') {
+
+    const updatedRepo = {
+      ...repo,
+      visit_count: (repo.visit_count || 0) + 1,
+      last_visited_at: now,
+      first_visited_at: repo.first_visited_at || now,
+    };
+    console.warn(
+      `[recordVisit] Updating repo ${repo.full_name}: visit_count=${updatedRepo.visit_count}, last_visited_at=${new Date(now).toISOString()}`,
+    );
+    await saveRepo(updatedRepo);
+    return;
+  }
+
+  if (type === 'issue') {
     const issue = await getFromStore<IssueRecord>(STORES.ISSUES, entityId);
-    if (issue) {
-      await putInStore(STORES.ISSUES, {
-        ...issue,
-        visit_count: (issue.visit_count || 0) + 1,
-        last_visited_at: now,
-        first_visited_at: issue.first_visited_at || now,
-      });
+    if (!issue) {
+      return;
     }
-  } else if (type === 'pr') {
+
+    await putInStore(STORES.ISSUES, {
+      ...issue,
+      visit_count: (issue.visit_count || 0) + 1,
+      last_visited_at: now,
+      first_visited_at: issue.first_visited_at || now,
+    });
+    return;
+  }
+
+  if (type === 'pr') {
     const pr = await getFromStore<PullRequestRecord>(STORES.PULL_REQUESTS, entityId);
-    if (pr) {
-      await putInStore(STORES.PULL_REQUESTS, {
-        ...pr,
-        visit_count: (pr.visit_count || 0) + 1,
-        last_visited_at: now,
-        first_visited_at: pr.first_visited_at || now,
-      });
+    if (!pr) {
+      return;
     }
+
+    await putInStore(STORES.PULL_REQUESTS, {
+      ...pr,
+      visit_count: (pr.visit_count || 0) + 1,
+      last_visited_at: now,
+      first_visited_at: pr.first_visited_at || now,
+    });
   }
 }
 
