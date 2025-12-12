@@ -15,144 +15,143 @@ async function detectAndRecordVisit() {
   // Excludes special GitHub pages like /settings, /notifications, /explore, etc.
   const repoMatch = path.match(/^\/([^/]+)\/([^/]+)/);
 
-  // Skip if it's a special GitHub page (not a real repo)
-  const specialPages = [
-    'settings',
-    'notifications',
-    'explore',
-    'trending',
-    'collections',
-    'events',
-    'sponsors',
-    'login',
-    'signup',
-    'pricing',
-    'features',
-    'enterprise',
-    'team',
-    'about',
-    'contact',
-    'security',
-    'site',
-  ];
+  if (!repoMatch) {
+    return;
+  }
 
-  if (repoMatch) {
-    const [, owner, repo] = repoMatch;
+  const [, owner, repo] = repoMatch;
 
-    // Skip special pages
-    if (specialPages.includes(owner)) {
-      return;
-    }
+  // Skip if it's a special GitHub page
+  if (
+    [
+      'settings',
+      'notifications',
+      'explore',
+      'trending',
+      'collections',
+      'events',
+      'sponsors',
+      'login',
+      'signup',
+      'pricing',
+      'features',
+      'enterprise',
+      'team',
+      'about',
+      'contact',
+      'security',
+      'site',
+    ].includes(owner)
+  ) {
+    return;
+  }
 
-    const fullName = `${owner}/${repo}`;
-    await debugWarn(`[Gitjump] On repo: ${fullName}`);
+  const fullName = `${owner}/${repo}`;
+  await debugWarn(`[Gitjump] On repo: ${fullName}`);
 
-    // Check if we're on a PR or Issue page
-    const prMatch = path.match(/^\/[^/]+\/[^/]+\/pull\/(\d+)/);
-    const issueMatch = path.match(/^\/[^/]+\/[^/]+\/issues\/(\d+)/);
+  // Check if we're on a PR or Issue page
+  const prMatch = path.match(/^\/[^/]+\/[^/]+\/pull\/(\d+)/);
+  const issueMatch = path.match(/^\/[^/]+\/[^/]+\/issues\/(\d+)/);
 
-    // Ask background worker for all repos to find the ID
-    try {
-      const response = await browser.runtime.sendMessage({
-        type: MessageType.GET_ALL_REPOS,
-      });
+  // Ask background worker for all repos to find the ID
+  try {
+    const response = await browser.runtime.sendMessage({
+      type: MessageType.GET_ALL_REPOS,
+    });
 
-      if (response.success && response.data) {
-        const repos = response.data;
-        const repoRecord = repos.find((r: { full_name: string }) => r.full_name === fullName);
+    if (response.success && response.data) {
+      const repos = response.data;
+      const repoRecord = repos.find((r: { full_name: string }) => r.full_name === fullName);
 
-        if (repoRecord) {
-          // Always record repo visit
-          await debugWarn(`[Gitjump] Recording visit to repo ${fullName} (ID: ${repoRecord.id})`);
-          await browser.runtime.sendMessage({
-            type: MessageType.RECORD_VISIT,
-            payload: { type: 'repo', entityId: repoRecord.id },
+      if (repoRecord) {
+        // Always record repo visit
+        await debugWarn(`[Gitjump] Recording visit to repo ${fullName} (ID: ${repoRecord.id})`);
+        await browser.runtime.sendMessage({
+          type: MessageType.RECORD_VISIT,
+          payload: { type: 'repo', entityId: repoRecord.id },
+        });
+
+        // If on PR page, also record PR visit
+        if (prMatch) {
+          const prNumber = parseInt(prMatch[1], 10);
+          const prsResponse = await browser.runtime.sendMessage({
+            type: MessageType.GET_PRS_BY_REPO,
+            payload: repoRecord.id,
           });
 
-          // If on PR page, also record PR visit
-          if (prMatch) {
-            const prNumber = parseInt(prMatch[1], 10);
-            const prsResponse = await browser.runtime.sendMessage({
-              type: MessageType.GET_PRS_BY_REPO,
-              payload: repoRecord.id,
-            });
+          if (prsResponse.success && prsResponse.data) {
+            let pr = prsResponse.data.find((p: { number: number }) => p.number === prNumber);
 
-            if (prsResponse.success && prsResponse.data) {
-              let pr = prsResponse.data.find((p: { number: number }) => p.number === prNumber);
+            // If PR not found in database, fetch it on-demand
+            if (!pr) {
+              await debugWarn(`[Gitjump] PR #${prNumber} not in database, fetching on-demand`);
+              const fetchResponse = await browser.runtime.sendMessage({
+                type: MessageType.FETCH_AND_SAVE_PR,
+                payload: { owner, repo, prNumber, repoId: repoRecord.id },
+              });
 
-              // If PR not found in database, fetch it on-demand
-              if (!pr) {
-                await debugWarn(`[Gitjump] PR #${prNumber} not in database, fetching on-demand`);
-                const fetchResponse = await browser.runtime.sendMessage({
-                  type: MessageType.FETCH_AND_SAVE_PR,
-                  payload: { owner, repo, prNumber, repoId: repoRecord.id },
-                });
-
-                if (fetchResponse.success && fetchResponse.data) {
-                  pr = fetchResponse.data;
-                }
-              }
-
-              if (pr) {
-                await debugWarn(`[Gitjump] Recording visit to PR #${prNumber} (ID: ${pr.id})`);
-                await browser.runtime.sendMessage({
-                  type: MessageType.RECORD_VISIT,
-                  payload: { type: 'pr', entityId: pr.id },
-                });
+              if (fetchResponse.success && fetchResponse.data) {
+                pr = fetchResponse.data;
               }
             }
-          }
 
-          // If on Issue page, also record Issue visit
-          if (issueMatch) {
-            const issueNumber = parseInt(issueMatch[1], 10);
-            const issuesResponse = await browser.runtime.sendMessage({
-              type: MessageType.GET_ISSUES_BY_REPO,
-              payload: repoRecord.id,
-            });
-
-            if (issuesResponse.success && issuesResponse.data) {
-              let issue = issuesResponse.data.find(
-                (i: { number: number }) => i.number === issueNumber,
-              );
-
-              // If issue not found in database, fetch it on-demand
-              if (!issue) {
-                await debugWarn(
-                  `[Gitjump] Issue #${issueNumber} not in database, fetching on-demand`,
-                );
-                const fetchResponse = await browser.runtime.sendMessage({
-                  type: MessageType.FETCH_AND_SAVE_ISSUE,
-                  payload: { owner, repo, issueNumber, repoId: repoRecord.id },
-                });
-
-                if (fetchResponse.success && fetchResponse.data) {
-                  issue = fetchResponse.data;
-                }
-              }
-
-              if (issue) {
-                await debugWarn(
-                  `[Gitjump] Recording visit to Issue #${issueNumber} (ID: ${issue.id})`,
-                );
-                await browser.runtime.sendMessage({
-                  type: MessageType.RECORD_VISIT,
-                  payload: { type: 'issue', entityId: issue.id },
-                });
-              }
+            if (pr) {
+              await debugWarn(`[Gitjump] Recording visit to PR #${prNumber} (ID: ${pr.id})`);
+              await browser.runtime.sendMessage({
+                type: MessageType.RECORD_VISIT,
+                payload: { type: 'pr', entityId: pr.id },
+              });
             }
           }
-
-          await debugWarn(`[Gitjump] Visit recorded successfully`);
-        } else {
-          await debugWarn(
-            `[Gitjump] Repo ${fullName} not in database yet, skipping visit tracking`,
-          );
         }
+
+        // If on Issue page, also record Issue visit
+        if (issueMatch) {
+          const issueNumber = parseInt(issueMatch[1], 10);
+          const issuesResponse = await browser.runtime.sendMessage({
+            type: MessageType.GET_ISSUES_BY_REPO,
+            payload: repoRecord.id,
+          });
+
+          if (issuesResponse.success && issuesResponse.data) {
+            let issue = issuesResponse.data.find(
+              (i: { number: number }) => i.number === issueNumber,
+            );
+
+            // If issue not found in database, fetch it on-demand
+            if (!issue) {
+              await debugWarn(
+                `[Gitjump] Issue #${issueNumber} not in database, fetching on-demand`,
+              );
+              const fetchResponse = await browser.runtime.sendMessage({
+                type: MessageType.FETCH_AND_SAVE_ISSUE,
+                payload: { owner, repo, issueNumber, repoId: repoRecord.id },
+              });
+
+              if (fetchResponse.success && fetchResponse.data) {
+                issue = fetchResponse.data;
+              }
+            }
+
+            if (issue) {
+              await debugWarn(
+                `[Gitjump] Recording visit to Issue #${issueNumber} (ID: ${issue.id})`,
+              );
+              await browser.runtime.sendMessage({
+                type: MessageType.RECORD_VISIT,
+                payload: { type: 'issue', entityId: issue.id },
+              });
+            }
+          }
+        }
+
+        await debugWarn(`[Gitjump] Visit recorded successfully`);
+      } else {
+        await debugWarn(`[Gitjump] Repo ${fullName} not in database yet, skipping visit tracking`);
       }
-    } catch (error) {
-      console.error('[Gitjump] Failed to record visit:', error);
     }
+  } catch (error) {
+    console.error('[Gitjump] Failed to record visit:', error);
   }
 }
 
