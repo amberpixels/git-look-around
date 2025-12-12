@@ -9,6 +9,8 @@ export interface KeyboardActions {
   focusInput: () => void;
   onType: (char: string) => void;
   tab: () => void;
+  enterFocusedMode: () => void;
+  exitFocusedMode: () => void;
 }
 
 export function useKeyboardShortcuts(actions: KeyboardActions, isVisible: () => boolean) {
@@ -27,7 +29,15 @@ export function useKeyboardShortcuts(actions: KeyboardActions, isVisible: () => 
 
     // If user is typing in a field, only allow specific navigation keys and Escape
     if (isTypingInField) {
-      const allowedKeys = ['Escape', 'ArrowUp', 'ArrowDown', 'Enter', 'Tab'];
+      const allowedKeys = [
+        'Escape',
+        'ArrowUp',
+        'ArrowDown',
+        'ArrowRight',
+        'ArrowLeft',
+        'Enter',
+        'Tab',
+      ];
       if (!allowedKeys.includes(e.key)) {
         return;
       }
@@ -56,6 +66,39 @@ export function useKeyboardShortcuts(actions: KeyboardActions, isVisible: () => 
       e.preventDefault();
       e.stopPropagation();
       actions.movePrev();
+      return;
+    }
+
+    if (e.key === 'ArrowRight') {
+      // Only handle if NOT typing in input field OR cursor is at the end
+      if (isTypingInField && target.tagName === 'INPUT') {
+        const input = target as HTMLInputElement;
+        const cursorAtEnd =
+          input.selectionStart === input.value.length && input.selectionEnd === input.value.length;
+        if (!cursorAtEnd) {
+          return; // Let the input handle cursor navigation
+        }
+      }
+      debugLogSync('[Gitjump] Shortcut: ArrowRight');
+      e.preventDefault();
+      e.stopPropagation();
+      actions.enterFocusedMode();
+      return;
+    }
+
+    if (e.key === 'ArrowLeft') {
+      // Only handle if NOT typing in input field OR cursor is at the start
+      if (isTypingInField && target.tagName === 'INPUT') {
+        const input = target as HTMLInputElement;
+        const cursorAtStart = input.selectionStart === 0 && input.selectionEnd === 0;
+        if (!cursorAtStart) {
+          return; // Let the input handle cursor navigation
+        }
+      }
+      debugLogSync('[Gitjump] Shortcut: ArrowLeft');
+      e.preventDefault();
+      e.stopPropagation();
+      actions.exitFocusedMode();
       return;
     }
 
