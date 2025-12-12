@@ -687,7 +687,9 @@ export default defineBackground(() => {
               // Save to database
               await saveIssue(issueRecord);
 
-              console.log(`[Background] Fetched and saved Issue #${issueNumber} for ${owner}/${repo}`);
+              console.log(
+                `[Background] Fetched and saved Issue #${issueNumber} for ${owner}/${repo}`,
+              );
               sendResponse({ success: true, data: issueRecord });
             } catch (error) {
               console.error(`[Background] Failed to fetch Issue #${issueNumber}:`, error);

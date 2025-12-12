@@ -63,6 +63,47 @@ function extractRepoPrefix(fullName: string): string | null {
 }
 
 /**
+ * Analyze repos to find dominant organizations
+ * Returns organizations that represent >= 80% of all repos
+ * These orgs are considered "main" and should be ignored in short queries
+ */
+async function analyzeDominantOrgs(repos: RepoRecord[]): Promise<string[]> {
+  const orgCounts = new Map<string, number>();
+  const totalRepos = repos.length;
+
+  // Count repos per organization
+  for (const repo of repos) {
+    const org = repo.full_name.split('/')[0]; // Get "hellotickets" from "hellotickets/ht-mixer"
+    if (org) {
+      orgCounts.set(org, (orgCounts.get(org) || 0) + 1);
+    }
+  }
+
+  // Find organizations with >= 80% of repos
+  const threshold = totalRepos * 0.8;
+  const dominant: string[] = [];
+
+  for (const [org, count] of orgCounts.entries()) {
+    if (count >= threshold) {
+      dominant.push(org);
+    }
+  }
+
+  // Debug log
+  const { debugLog } = await import('@/src/utils/debug');
+  await debugLog('[useUnifiedSearch] Dominant org analysis:', {
+    totalRepos,
+    threshold: `>= ${threshold} repos (80% of ${totalRepos})`,
+    allOrgs: Array.from(orgCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([org, count]) => `${org} (${count} repos, ${Math.round((count / totalRepos) * 100)}%)`),
+    dominantOrgs: dominant.length > 0 ? dominant : '(none detected)',
+  });
+
+  return dominant;
+}
+
+/**
  * Analyze repos to find common prefixes
  * Returns prefixes that appear in >= 3 repos AND >= 10% of total repos
  */
@@ -111,11 +152,17 @@ async function analyzeCommonPrefixes(repos: RepoRecord[]): Promise<string[]> {
  * 5. Word boundary at start: 500 (e.g., " mixer" or "-mixer")
  * 6. Word boundary anywhere: 400
  * 7. Space word boundary: 300
- * 8. Contains query: 100
+ * 8. Contains query: 100 (NOT for single-char queries)
+ *
+ * Special rule: Single-character queries (1 char) only match:
+ * - Starts with (prefix)
+ * - After word boundaries (-, /, _, ., space)
+ * This prevents matching "curator" when searching "u"
  */
 function calculateMatchScore(text: string, query: string, commonPrefixes: string[] = []): number {
   const lowerText = text.toLowerCase();
   const lowerQuery = query.toLowerCase();
+  const isSingleChar = lowerQuery.length === 1;
 
   // Exact match
   if (lowerText === lowerQuery) return 1000;
@@ -170,8 +217,9 @@ function calculateMatchScore(text: string, query: string, commonPrefixes: string
   // Check for word boundary with space specifically (legacy behavior)
   if (lowerText.includes(` ${lowerQuery}`)) return 300;
 
-  // Contains query anywhere
-  if (lowerText.includes(lowerQuery)) return 100;
+  // Contains query anywhere - BUT NOT for single-character queries
+  // Single-char queries should only match prefix or word boundaries to avoid noise
+  if (!isSingleChar && lowerText.includes(lowerQuery)) return 100;
 
   return 0; // No match
 }
@@ -179,6 +227,7 @@ function calculateMatchScore(text: string, query: string, commonPrefixes: string
 export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | string) {
   const allEntities = ref<SearchableEntity[]>([]);
   const commonPrefixes = ref<string[]>([]);
+  const dominantOrgs = ref<string[]>([]); // Organizations that represent ≥80% of repos
 
   // Support both ref and plain string
   const username = computed(() => {
@@ -213,18 +262,34 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
     const results: SearchResultItem[] = [];
     const normalizedQuery = query.trim().toLowerCase();
     const currentUser = username.value;
+    const isShortQuery = normalizedQuery.length > 0 && normalizedQuery.length <= 2;
 
     for (const entity of allEntities.value) {
       const { repo, issues, prs } = entity;
 
       // Calculate repo match score
+      // For short queries (1-2 chars), check if we should ignore org name
+      let repoNameForMatching = repo.full_name;
+      if (isShortQuery) {
+        const org = repo.full_name.split('/')[0];
+        const isDominantOrg = dominantOrgs.value.some(
+          (dominantOrg) => dominantOrg.toLowerCase() === org.toLowerCase(),
+        );
+
+        // If org is dominant (>=80% of repos), ignore it and only match on repo name
+        if (isDominantOrg) {
+          repoNameForMatching = repo.full_name.split('/').pop() || repo.full_name;
+        }
+      }
+
       const repoNameScore = calculateMatchScore(
-        repo.full_name,
+        repoNameForMatching,
         normalizedQuery,
         commonPrefixes.value,
       );
+      // Repo descriptions are free text, don't use common prefixes
       const repoDescScore = repo.description
-        ? calculateMatchScore(repo.description, normalizedQuery, commonPrefixes.value)
+        ? calculateMatchScore(repo.description, normalizedQuery, [])
         : 0;
       const repoMatchScore = Math.max(repoNameScore, repoDescScore);
 
@@ -247,7 +312,8 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
 
       // Add PRs
       for (const pr of prs) {
-        const prTitleScore = calculateMatchScore(pr.title, normalizedQuery, commonPrefixes.value);
+        // Don't use common prefixes for PRs - they're for repo naming conventions, not PR titles
+        const prTitleScore = calculateMatchScore(pr.title, normalizedQuery, []);
         const prNumberMatch = normalizedQuery && pr.number.toString().includes(normalizedQuery);
 
         if (!normalizedQuery || prTitleScore > 0 || prNumberMatch) {
@@ -277,11 +343,8 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
 
       // Add issues
       for (const issue of issues) {
-        const issueTitleScore = calculateMatchScore(
-          issue.title,
-          normalizedQuery,
-          commonPrefixes.value,
-        );
+        // Don't use common prefixes for Issues - they're for repo naming conventions, not issue titles
+        const issueTitleScore = calculateMatchScore(issue.title, normalizedQuery, []);
         const issueNumberMatch =
           normalizedQuery && issue.number.toString().includes(normalizedQuery);
 
@@ -314,39 +377,54 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
 
   /**
    * Sort search results by:
-   * 1. Visited items first (by last_visited_at DESC) - visit recency is the strongest signal
-   * 2. For never-visited items: search score (text match quality)
-   * 3. State (Open/Repo > Closed)
-   * 4. isMine (Authored/Owned by me)
-   * 5. recentlyContributedByMe (Contributed in last 2 months)
-   * 6. Updated At (DESC)
+   * 1. Search score (text match quality) - group by score tiers
+   * 2. For short queries (≤2 chars): Repos before PRs/Issues within same score
+   * 3. Within same score tier and type: visited items first (by last_visited_at DESC)
+   * 4. For never-visited items within same tier: State (Open/Repo > Closed)
+   * 5. isMine (Authored/Owned by me)
+   * 6. recentlyContributedByMe (Contributed in last 2 months)
+   * 7. Updated At (DESC)
    */
-  function sortResults(results: SearchResultItem[], hasQuery: boolean): SearchResultItem[] {
+  function sortResults(
+    results: SearchResultItem[],
+    hasQuery: boolean,
+    query: string = '',
+  ): SearchResultItem[] {
+    const normalizedQuery = query.trim();
+    const isShortQuery = normalizedQuery.length > 0 && normalizedQuery.length <= 2;
+
     return [...results].sort((a, b) => {
-      // PRIORITY 1: Visited items come before never-visited items
+      // PRIORITY 1: When searching, group by search score first
+      // This ensures high-quality matches (score 800+) appear before weak matches (score 100)
+      if (hasQuery && a.score !== b.score) {
+        return b.score - a.score; // Higher score = better match
+      }
+
+      // PRIORITY 2: For short queries (1-2 chars), prioritize repos over PRs/Issues
+      // Short queries are exploratory - users are looking for repos, not drilling into PRs
+      // This happens BEFORE checking visits so repos always beat PRs when scores are equal
+      if (isShortQuery && hasQuery) {
+        const isRepoA = a.type === 'repo';
+        const isRepoB = b.type === 'repo';
+
+        if (isRepoA && !isRepoB) return -1; // A is repo, B is PR/Issue → A first
+        if (!isRepoA && isRepoB) return 1; // B is repo, A is PR/Issue → B first
+      }
+
+      // PRIORITY 3: Within same score tier (and type for short queries), visited items come before never-visited
       const hasVisitedA = a.lastVisitedAt != null;
       const hasVisitedB = b.lastVisitedAt != null;
 
       if (hasVisitedA && !hasVisitedB) return -1; // A visited, B not → A first
       if (!hasVisitedA && hasVisitedB) return 1; // B visited, A not → B first
 
-      // PRIORITY 2: Both visited AND user is searching → use search score first
-      if (hasVisitedA && hasVisitedB && hasQuery && a.score !== b.score) {
-        return b.score - a.score; // Higher score = better match
-      }
-
-      // PRIORITY 3: Both visited (no query or same score) → sort by visit time DESC
+      // PRIORITY 4: Both visited → sort by visit time DESC (most recent first)
       if (hasVisitedA && hasVisitedB) {
         return b.lastVisitedAt! - a.lastVisitedAt!;
       }
 
-      // PRIORITY 4: Both never-visited → use search score (text match quality)
-      if (hasQuery && a.score !== b.score) {
-        return b.score - a.score;
-      }
-
-      // State: Open > Closed
-      // Repos are treated as 'open'
+      // PRIORITY 5: Both never-visited → secondary factors
+      // State: Open > Closed (repos are treated as 'open')
       const isOpenA = a.state === 'open';
       const isOpenB = b.state === 'open';
 
@@ -363,7 +441,7 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
         return a.recentlyContributedByMe ? -1 : 1;
       }
 
-      // Both never-visited: sort by updated_at DESC
+      // Final tiebreaker: sort by updated_at DESC
       const updatedA = a.updatedAt ?? 0;
       const updatedB = b.updatedAt ?? 0;
       return updatedB - updatedA;
@@ -417,7 +495,7 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
         });
       }
 
-      return sortResults(filteredResults, hasQuery);
+      return sortResults(filteredResults, hasQuery, query);
     };
   });
 
@@ -427,9 +505,10 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
   async function setEntities(entities: SearchableEntity[]) {
     allEntities.value = entities;
 
-    // Analyze repos to find common prefixes
+    // Analyze repos to find common prefixes and dominant organizations
     const repos = entities.map((e) => e.repo);
     commonPrefixes.value = await analyzeCommonPrefixes(repos);
+    dominantOrgs.value = await analyzeDominantOrgs(repos);
   }
 
   return {
