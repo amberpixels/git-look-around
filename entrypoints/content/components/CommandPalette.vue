@@ -1512,24 +1512,28 @@ function formatTimeAgo(timestamp: number): string {
 
 /**
  * Detect dark theme preference from DOM
- * Checks both OS-level and GitHub's theme
+ * Checks GitHub's theme setting
  */
 function detectDarkTheme(): boolean {
   // Method 1: Check GitHub's theme (most accurate for GitHub pages)
   const htmlElement = document.documentElement;
   const githubTheme = htmlElement.getAttribute('data-color-mode');
-  const githubDarkTheme = htmlElement.getAttribute('data-dark-theme');
 
-  if (githubTheme === 'dark' || githubDarkTheme) {
+  // GitHub uses: 'light', 'dark', or 'auto'
+  if (githubTheme === 'dark') {
     return true;
   }
 
-  // Method 2: Check OS-level preference
+  if (githubTheme === 'light') {
+    return false;
+  }
+
+  // If 'auto' or not set, check OS-level preference
   if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
     return true;
   }
 
-  // Method 3: Fallback - check if GitHub has dark class
+  // Method 2: Fallback - check if GitHub has dark class
   if (document.body.classList.contains('dark') || document.body.classList.contains('dark-theme')) {
     return true;
   }
@@ -1677,12 +1681,21 @@ defineExpose({
 
 <style scoped>
 .gitjump-overlay {
+  /* GitHub color variables - Light theme */
+  --fgColor-accent: #0969da;
+  --bgColor-accent-muted: #ddf4ff;
+  --borderColor-accent-emphasis: #0969da;
+  --borderColor-default: #d0d7de;
+  --fgColor-default: #24292f;
+  --fgColor-muted: #57606a;
+  --bgColor-muted: #f6f8fa;
+
   position: fixed;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.4);
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -1691,8 +1704,8 @@ defineExpose({
 }
 
 .gitjump-popup {
-  background: #f6f8fa;
-  border: 1px solid #d0d7de;
+  background: var(--bgColor-muted);
+  border: 1px solid var(--borderColor-default);
   border-radius: 12px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   max-width: 675px;
@@ -1707,7 +1720,7 @@ defineExpose({
 /* (1) Search bar */
 .search-bar {
   padding: 0;
-  border-bottom: 1px solid #d0d7de;
+  border-bottom: 1px solid var(--borderColor-default);
   background: white;
   display: flex;
   align-items: center;
@@ -1718,12 +1731,12 @@ defineExpose({
 
 .search-icon {
   flex-shrink: 0;
-  fill: #57606a;
+  fill: var(--fgColor-muted);
 }
 
 .spinner-icon {
   flex-shrink: 0;
-  fill: #57606a;
+  fill: var(--fgColor-muted);
   animation: spin 1s linear infinite;
 }
 
@@ -1746,12 +1759,12 @@ defineExpose({
   outline: none;
   font-family: inherit;
   background: transparent;
-  color: #24292f;
+  color: var(--fgColor-default);
   line-height: 20px;
 }
 
 .search-input::placeholder {
-  color: #57606a;
+  color: var(--fgColor-muted);
 }
 
 /* Filter button */
@@ -1759,7 +1772,7 @@ defineExpose({
   flex-shrink: 0;
   height: 24px; /* Match search input line height */
   padding: 2px 8px;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--borderColor-default);
   border-radius: 4px;
   background: white;
   cursor: pointer;
@@ -1770,19 +1783,19 @@ defineExpose({
   transition: all 0.15s ease;
   font-size: 11px;
   font-weight: 500;
-  color: #57606a;
+  color: var(--fgColor-muted);
 }
 
 .filter-button:hover {
-  background: #f6f8fa;
-  border-color: #0969da;
-  color: #0969da;
+  background: var(--bgColor-muted);
+  border-color: var(--borderColor-accent-emphasis);
+  color: var(--fgColor-accent);
 }
 
 .filter-button.active {
-  background: #ddf4ff;
-  border-color: #0969da;
-  color: #0969da;
+  background: var(--bgColor-accent-muted);
+  border-color: var(--borderColor-accent-emphasis);
+  color: var(--fgColor-accent);
 }
 
 .filter-avatar {
@@ -1815,16 +1828,16 @@ defineExpose({
 .filter-button svg {
   width: 16px;
   height: 16px;
-  fill: #57606a;
+  fill: var(--fgColor-muted);
   flex-shrink: 0;
 }
 
 .filter-button.active svg {
-  fill: #0969da;
+  fill: var(--fgColor-accent);
 }
 
 .filter-button:hover svg {
-  fill: #0969da;
+  fill: var(--fgColor-accent);
 }
 
 /* (2) Main content area */
@@ -1863,7 +1876,7 @@ defineExpose({
   align-items: center;
   gap: 10px;
   padding: 7px 16px 8px 16px;
-  border-bottom: 1px solid #d0d7de;
+  border-bottom: 1px solid var(--borderColor-default);
   cursor: pointer;
   transition: background-color 0.1s;
 }
@@ -1878,7 +1891,7 @@ defineExpose({
 .skeleton-icon-circle {
   width: 16px;
   height: 16px;
-  background: #d0d7de;
+  background: var(--borderColor-default);
   border-radius: 50%; /* Circle for PR/issue icon */
   animation: skeleton-pulse 1.5s ease-in-out infinite;
   flex-shrink: 0;
@@ -1894,7 +1907,7 @@ defineExpose({
 .skeleton-number {
   height: 14px;
   width: 32px; /* Width for "#1234" */
-  background: #d0d7de;
+  background: var(--borderColor-default);
   border-radius: 3px;
   animation: skeleton-pulse 1.5s ease-in-out infinite;
   flex-shrink: 0;
@@ -1902,7 +1915,7 @@ defineExpose({
 
 .skeleton-title {
   height: 14px;
-  background: #d0d7de;
+  background: var(--borderColor-default);
   border-radius: 3px;
   animation: skeleton-pulse 1.5s ease-in-out infinite;
   flex: 1;
@@ -1912,7 +1925,7 @@ defineExpose({
 .skeleton-meta-line {
   height: 12px;
   width: 120px; /* Width for "in owner/repo" text */
-  background: #d0d7de;
+  background: var(--borderColor-default);
   border-radius: 3px;
   animation: skeleton-pulse 1.5s ease-in-out infinite;
 }
@@ -2002,8 +2015,8 @@ defineExpose({
 }
 
 .result-item.focused {
-  background: #ddf4ff;
-  border-left: 3px solid #0969da;
+  background: var(--bgColor-accent-muted);
+  border-left: 3px solid var(--borderColor-accent-emphasis);
   padding-left: 13px;
 }
 
@@ -2035,7 +2048,7 @@ defineExpose({
 
 .icon-fork,
 .icon-public {
-  color: #57606a;
+  color: var(--fgColor-muted);
 }
 
 .icon-pr.icon-open {
@@ -2043,7 +2056,7 @@ defineExpose({
 }
 
 .icon-pr.icon-draft {
-  color: #57606a;
+  color: var(--fgColor-muted);
 }
 
 .icon-pr.icon-merged {
@@ -2055,7 +2068,7 @@ defineExpose({
 }
 
 .icon-issue.icon-open {
-  color: #0969da;
+  color: var(--fgColor-accent);
 }
 
 .icon-issue.icon-closed {
@@ -2096,7 +2109,7 @@ defineExpose({
 .result-title {
   font-size: 14px;
   font-weight: 500;
-  color: #24292f;
+  color: var(--fgColor-default);
   text-decoration: none;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2111,12 +2124,12 @@ defineExpose({
 }
 
 .result-title:hover {
-  color: #0969da;
+  color: var(--fgColor-accent);
   text-decoration: none;
 }
 
 .result-number {
-  color: #57606a;
+  color: var(--fgColor-muted);
   font-weight: 600;
   font-size: 13px;
   margin-right: 6px;
@@ -2127,7 +2140,7 @@ defineExpose({
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: #57606a;
+  color: var(--fgColor-muted);
   height: 22px;
   line-height: 22px;
 }
@@ -2147,12 +2160,12 @@ defineExpose({
 
 .avatar-arrow {
   flex-shrink: 0;
-  color: #57606a;
+  color: var(--fgColor-muted);
   opacity: 0.6;
 }
 
 .repo-parent {
-  color: #57606a;
+  color: var(--fgColor-muted);
   font-size: 12px;
 }
 
@@ -2162,7 +2175,7 @@ defineExpose({
 
 .repo-meta-left,
 .repo-meta-right {
-  color: #57606a;
+  color: var(--fgColor-muted);
   font-size: 12px;
   display: flex;
   align-items: center;
@@ -2222,8 +2235,8 @@ defineExpose({
   font-weight: 500;
   padding: 2px 6px;
   border-radius: 12px;
-  background: #f6f8fa;
-  border: 1px solid #d0d7de;
+  background: var(--bgColor-muted);
+  border: 1px solid var(--borderColor-default);
 }
 
 .count-badge .icon {
@@ -2232,7 +2245,7 @@ defineExpose({
 }
 
 .count-badge.issues {
-  color: #0969da;
+  color: var(--fgColor-accent);
 }
 
 .count-badge.prs {
@@ -2246,7 +2259,7 @@ defineExpose({
 
 .non-indexed-separator {
   padding: 12px 16px;
-  background: #f6f8fa;
+  background: var(--bgColor-muted);
   border-top: 2px solid #e1e4e8;
   border-bottom: 1px solid #e1e4e8;
   font-size: 13px;
@@ -2272,7 +2285,7 @@ defineExpose({
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #0366d6;
+  color: var(--fgColor-accent);
   transition:
     background-color 0.2s,
     border-color 0.2s;
@@ -2281,8 +2294,8 @@ defineExpose({
 }
 
 .add-to-index-btn:hover {
-  background: #f6f8fa;
-  border-color: #0366d6;
+  background: var(--bgColor-muted);
+  border-color: var(--borderColor-accent-emphasis);
 }
 
 .add-to-index-btn svg {
@@ -2384,70 +2397,81 @@ defineExpose({
 
 /* Dark theme overrides */
 .gitjump-popup.dark-theme {
-  background: #1c2128;
-  border-color: #444c56;
-  color: #e6edf3;
+  /* GitHub color variables - Dark theme */
+  --fgColor-accent: #1f6feb;
+  --bgColor-accent-muted: #388bfd1a;
+  --borderColor-accent-emphasis: #1f6feb;
+  --borderColor-default: #444c56;
+  --fgColor-default: #e6edf3;
+  --fgColor-muted: #768390;
+  --bgColor-muted: #1c2128;
+  --bgColor-emphasis: #2d333b;
+  --bgColor-neutral-muted: #22272e;
+
+  background: var(--bgColor-muted);
+  border-color: var(--borderColor-default);
+  color: var(--fgColor-default);
 }
 
 .dark-theme .search-bar {
-  background: #1c2128;
-  border-bottom-color: #444c56;
+  background: var(--bgColor-muted);
+  border-bottom-color: var(--borderColor-default);
 }
 
 .dark-theme .search-icon,
 .dark-theme .spinner-icon {
-  fill: #768390;
+  fill: var(--fgColor-muted);
 }
 
 .dark-theme .search-input {
   background: transparent;
-  color: #adbac7;
+  color: var(--fgColor-default);
 }
 
 .dark-theme .search-input::placeholder {
-  color: #768390;
+  color: var(--fgColor-muted);
 }
 
 .dark-theme .filter-button {
-  background: #1c2128;
-  border-color: #444c56;
-  color: #768390;
+  background: var(--bgColor-muted);
+  border-color: var(--borderColor-default);
+  color: var(--fgColor-muted);
 }
 
 .dark-theme .filter-button:hover {
-  background: #2d333b;
-  border-color: #539bf5;
-  color: #539bf5;
+  background: var(--bgColor-emphasis);
+  border-color: var(--borderColor-accent-emphasis);
+  color: var(--fgColor-accent);
 }
 
 .dark-theme .filter-button.active {
-  background: #1c2d3f;
-  border-color: #539bf5;
-  color: #539bf5;
+  background: var(--bgColor-accent-muted);
+  border-color: var(--borderColor-accent-emphasis);
+  color: var(--fgColor-accent);
 }
 
 .dark-theme .filter-button svg {
-  fill: #768390;
+  fill: var(--fgColor-muted);
 }
 
 .dark-theme .filter-button.active svg {
-  fill: #539bf5;
+  fill: var(--fgColor-accent);
 }
 
 .dark-theme .filter-button:hover svg {
-  fill: #539bf5;
+  fill: var(--fgColor-accent);
 }
 
 .dark-theme .filter-avatar {
-  border-color: #1c2128;
+  border-color: var(--bgColor-muted);
 }
 
 .dark-theme .avatar-arrow {
-  color: #768390;
+  color: var(--fgColor-muted);
 }
 
 .dark-theme .status {
-  color: #768390;
+  color: var(--fgColor-muted);
 }
 
 .dark-theme .status.error {
@@ -2467,16 +2491,16 @@ defineExpose({
 }
 
 .dark-theme .result-item.focused {
-  background: #2d3845;
-  border-left-color: #539bf5;
+  background: var(--bgColor-accent-muted);
+  border-left-color: var(--borderColor-accent-emphasis);
 }
 
 .dark-theme .result-title {
-  color: #adbac7;
+  color: var(--fgColor-default);
 }
 
 .dark-theme .result-title:hover {
-  color: #539bf5;
+  color: var(--fgColor-accent);
 }
 
 .dark-theme .result-number,
@@ -2484,7 +2508,7 @@ defineExpose({
 .dark-theme .repo-parent,
 .dark-theme .repo-meta-left,
 .dark-theme .repo-meta-right {
-  color: #768390;
+  color: var(--fgColor-muted);
 }
 
 .dark-theme .icon-private {
@@ -2493,7 +2517,7 @@ defineExpose({
 
 .dark-theme .icon-fork,
 .dark-theme .icon-public {
-  color: #768390;
+  color: var(--fgColor-muted);
 }
 
 .dark-theme .icon-pr.icon-open {
@@ -2501,7 +2525,7 @@ defineExpose({
 }
 
 .dark-theme .icon-pr.icon-draft {
-  color: #768390;
+  color: var(--fgColor-muted);
 }
 
 .dark-theme .icon-pr.icon-merged {
@@ -2513,20 +2537,20 @@ defineExpose({
 }
 
 .dark-theme .icon-issue.icon-open {
-  color: #539bf5;
+  color: var(--fgColor-accent);
 }
 
 .dark-theme .icon-issue.icon-closed {
-  color: #768390;
+  color: var(--fgColor-muted);
 }
 
 .dark-theme .count-badge {
-  background: #22272e;
-  border-color: #444c56;
+  background: var(--bgColor-neutral-muted);
+  border-color: var(--borderColor-default);
 }
 
 .dark-theme .count-badge.issues {
-  color: #539bf5;
+  color: var(--fgColor-accent);
 }
 
 .dark-theme .count-badge.prs {
@@ -2538,50 +2562,50 @@ defineExpose({
 }
 
 .dark-theme .non-indexed-separator {
-  background: #22272e;
-  border-top-color: #444c56;
-  border-bottom-color: #444c56;
-  color: #768390;
+  background: var(--bgColor-neutral-muted);
+  border-top-color: var(--borderColor-default);
+  border-bottom-color: var(--borderColor-default);
+  color: var(--fgColor-muted);
 }
 
 .dark-theme .result-item.non-indexed .result-title {
-  color: #768390;
+  color: var(--fgColor-muted);
 }
 
 .dark-theme .add-to-index-btn {
-  border-color: #444c56;
-  color: #539bf5;
+  border-color: var(--borderColor-default);
+  color: var(--fgColor-accent);
 }
 
 .dark-theme .add-to-index-btn:hover {
-  background: #22272e;
-  border-color: #539bf5;
+  background: var(--bgColor-neutral-muted);
+  border-color: var(--borderColor-accent-emphasis);
 }
 
 .dark-theme .status-bar {
-  background: #22272e;
-  border-top-color: #444c56;
+  background: var(--bgColor-neutral-muted);
+  border-top-color: var(--borderColor-default);
 }
 
 .dark-theme .status-text {
-  color: #768390;
+  color: var(--fgColor-muted);
 }
 
 .load-more-container {
   padding: 12px;
   display: flex;
   justify-content: center;
-  border-bottom: 1px solid #d0d7de;
+  border-bottom: 1px solid var(--borderColor-default);
 }
 
 .load-more-btn {
-  background: #f6f8fa;
-  border: 1px solid #d0d7de;
+  background: var(--bgColor-muted);
+  border: 1px solid var(--borderColor-default);
   border-radius: 6px;
   padding: 8px 16px;
   font-size: 13px;
   font-weight: 500;
-  color: #24292f;
+  color: var(--fgColor-default);
   cursor: pointer;
   transition: background-color 0.2s;
 }
@@ -2609,19 +2633,19 @@ defineExpose({
 .repo-hint {
   margin-left: auto;
   font-size: 12px;
-  color: #57606a;
+  color: var(--fgColor-muted);
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
 .hint-key {
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--borderColor-default);
   border-radius: 4px;
   padding: 0 4px;
   font-size: 11px;
-  background: #f6f8fa;
-  color: #57606a;
+  background: var(--bgColor-muted);
+  color: var(--fgColor-muted);
 }
 
 .dark-theme .hint-key {
@@ -2632,7 +2656,7 @@ defineExpose({
 
 .repo-filter-prefix {
   font-size: 14px;
-  color: #57606a;
+  color: var(--fgColor-muted);
   margin-left: 4px;
   white-space: nowrap;
 }
@@ -2642,7 +2666,7 @@ defineExpose({
 }
 
 .repo-filter-slash {
-  color: #57606a;
+  color: var(--fgColor-muted);
 }
 
 .input-wrapper {
