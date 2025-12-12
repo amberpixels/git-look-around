@@ -262,24 +262,25 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
     const results: SearchResultItem[] = [];
     const normalizedQuery = query.trim().toLowerCase();
     const currentUser = username.value;
-    const isShortQuery = normalizedQuery.length > 0 && normalizedQuery.length <= 2;
+
+    // TODO: respect isShortQuery ??
+    //const isShortQuery = normalizedQuery.length > 0 && normalizedQuery.length <= 2;
 
     for (const entity of allEntities.value) {
       const { repo, issues, prs } = entity;
 
       // Calculate repo match score
-      // For short queries (1-2 chars), check if we should ignore org name
+      // Check if we should ignore org name for matching
       let repoNameForMatching = repo.full_name;
-      if (isShortQuery) {
-        const org = repo.full_name.split('/')[0];
-        const isDominantOrg = dominantOrgs.value.some(
-          (dominantOrg) => dominantOrg.toLowerCase() === org.toLowerCase(),
-        );
+      const org = repo.full_name.split('/')[0];
+      const isDominantOrg = dominantOrgs.value.some(
+        (dominantOrg) => dominantOrg.toLowerCase() === org.toLowerCase(),
+      );
 
-        // If org is dominant (>=80% of repos), ignore it and only match on repo name
-        if (isDominantOrg) {
-          repoNameForMatching = repo.full_name.split('/').pop() || repo.full_name;
-        }
+      // If org is dominant (>=80% of repos), ignore it and only match on repo name
+      // This ensures "curator" matches "hellotickets/curator" with exact match score
+      if (isDominantOrg) {
+        repoNameForMatching = repo.full_name.split('/').pop() || repo.full_name;
       }
 
       const repoNameScore = calculateMatchScore(
