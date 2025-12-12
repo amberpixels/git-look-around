@@ -26,9 +26,9 @@
             stroke-linecap="round"
           />
         </svg>
-        <div v-if="repoFilter" class="repo-filter-badge">
-          {{ formatRepoName(repoFilter.full_name) }}
-        </div>
+        <span v-if="repoFilter" class="repo-filter-prefix">
+          {{ formatRepoName(repoFilter.full_name) }} ›
+        </span>
         <div class="input-wrapper">
           <input
             ref="searchInputRef"
@@ -427,7 +427,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, onUnmounted, watch } from 'vue';
+import { ref, computed, onMounted, nextTick, onUnmounted, watch, shallowRef } from 'vue';
 import { useRepos } from '@/src/composables/useRepos';
 import { useSyncStatus } from '@/src/composables/useSyncStatus';
 import { useRateLimit } from '@/src/composables/useRateLimit';
@@ -499,8 +499,20 @@ const panelMode = ref<PanelMode>('HIDDEN');
 const repoFilter = ref<RepoRecord | null>(null);
 const previousSearchQuery = ref('');
 
+// Cache for blazingly fast focused mode exit
+interface FocusedModeCache {
+  query: string;
+  debouncedQuery: string;
+  focusedIndex: number;
+  rawSearchResults: SearchResultItem[];
+}
+const focusedModeCache = shallowRef<FocusedModeCache | null>(null);
+
 // Flag to skip initial focus event (when we programmatically focus on open)
 const skipNextFocusEvent = ref(false);
+
+// Flag to skip fetchSearchResults when restoring from cache
+const isRestoringFromCache = ref(false);
 
 // Use debounced query for filtering to keep typing blazingly fast
 const normalizedSearchQuery = computed(() => debouncedSearchQuery.value.trim().toLowerCase());
@@ -952,6 +964,11 @@ watch(searchQuery, (newQuery) => {
 });
 
 watch(debouncedSearchQuery, () => {
+  // Skip if we're restoring from cache (results are already restored)
+  if (isRestoringFromCache.value) {
+    return;
+  }
+
   resultLimit.value = INITIAL_RESULT_LIMIT;
   // Fetch new search results from background when query changes
   fetchSearchResults(normalizedSearchQuery.value);
@@ -976,43 +993,112 @@ function navigateToFocusedTarget(newTab: boolean = false) {
   navigateToFocusedItem(newTab);
 }
 
-function handleTab() {
-  // If already in filtered mode, do nothing (or maybe autocomplete in future)
+/**
+ * Enter focused mode for a repository (Right arrow or Tab)
+ */
+function enterFocusedMode() {
+  // Guard: Must be on a repo
+  const focusedItem = visibleResults.value[focusedIndex.value];
+  if (!focusedItem || focusedItem.type !== 'repo') return;
+
+  // Guard: Already in focused mode
   if (repoFilter.value) return;
 
-  // If not in filtered mode, check focused result
-  const focusedItem = visibleResults.value[focusedIndex.value];
-  if (focusedItem && focusedItem.type === 'repo') {
-    // Enter nested filtered mode
-    const repo = getRepoById(focusedItem.entityId);
-    if (repo) {
-      debugLogSync('[Gitjump] Entering nested filtered mode for:', repo.full_name);
-      // Save current query before clearing
-      previousSearchQuery.value = searchQuery.value;
-      repoFilter.value = repo;
-      searchQuery.value = ''; // Clear query to start searching in repo
-      debouncedSearchQuery.value = '';
-      // Ensure input keeps focus
-      searchInputRef.value?.focus();
-    }
+  const repo = getRepoById(focusedItem.entityId);
+  if (!repo) return;
+
+  debugLogSync('[Gitjump] Entering focused mode for:', repo.full_name);
+
+  // Cache current state for instant restoration
+  focusedModeCache.value = {
+    query: searchQuery.value,
+    debouncedQuery: debouncedSearchQuery.value,
+    focusedIndex: focusedIndex.value,
+    rawSearchResults: [...rawSearchResults.value],
+  };
+
+  // Clear any pending debounce to prevent delayed updates
+  if (debounceTimeout) {
+    window.clearTimeout(debounceTimeout);
+    debounceTimeout = null;
   }
+
+  // Clear queries FIRST (before setting repoFilter) to prevent filtered results flash
+  searchQuery.value = '';
+  debouncedSearchQuery.value = '';
+
+  // Clear raw results immediately to prevent showing stale filtered data
+  rawSearchResults.value = [];
+
+  // Enter focused mode (this will trigger results recomputation with empty query)
+  repoFilter.value = repo;
+  focusedIndex.value = 0;
+
+  // Immediately fetch unfiltered results
+  fetchSearchResults('');
+
+  searchInputRef.value?.focus();
 }
 
-function handleBackspace(_e: KeyboardEvent) {
-  // If in nested mode and query is empty, exit nested mode on Backspace
-  if (repoFilter.value && searchQuery.value === '') {
-    debugLogSync('[Gitjump] Exiting nested filtered mode via Backspace');
-    repoFilter.value = null;
-    searchQuery.value = previousSearchQuery.value;
-    debouncedSearchQuery.value = previousSearchQuery.value;
+/**
+ * Exit focused mode (Left arrow, Escape, or Backspace)
+ */
+function exitFocusedMode() {
+  if (!repoFilter.value) return;
 
-    // Restore FILTERED mode if we have a query
-    if (searchQuery.value.trim()) {
-      panelMode.value = 'FILTERED';
+  debugLogSync('[Gitjump] Exiting focused mode');
+
+  // Clear focused mode
+  repoFilter.value = null;
+
+  // Restore from cache (blazingly fast!)
+  if (focusedModeCache.value) {
+    const cache = focusedModeCache.value;
+
+    // Clear any pending debounce to prevent delayed re-render
+    if (debounceTimeout) {
+      window.clearTimeout(debounceTimeout);
+      debounceTimeout = null;
     }
 
-    // Prevent default to avoid deleting characters from the previous state (though it's empty)
-    // But we want to feel natural.
+    // Set flag to prevent watcher from triggering fetchSearchResults
+    isRestoringFromCache.value = true;
+
+    // Restore raw search results FIRST (before queries) to prevent refetch
+    rawSearchResults.value = cache.rawSearchResults;
+
+    // Restore both query values synchronously to avoid triggering debounce watcher
+    searchQuery.value = cache.query;
+    debouncedSearchQuery.value = cache.debouncedQuery;
+
+    // Clear flag after restoration is complete
+    nextTick(() => {
+      isRestoringFromCache.value = false;
+      focusedIndex.value = cache.focusedIndex;
+      ensureFocusVisible();
+    });
+  }
+
+  // Clear cache
+  focusedModeCache.value = null;
+
+  // Restore panel mode if we had a query
+  if (searchQuery.value.trim()) {
+    panelMode.value = 'FILTERED';
+  }
+
+  searchInputRef.value?.focus();
+}
+
+function handleTab() {
+  enterFocusedMode();
+}
+
+function handleBackspace(e: KeyboardEvent) {
+  // If in focused mode and query is empty, exit focused mode on Backspace
+  if (repoFilter.value && searchQuery.value === '') {
+    e.preventDefault(); // Prevent deleting from restored query
+    exitFocusedMode();
   }
 }
 
@@ -1516,14 +1602,7 @@ useKeyboardShortcuts(
       // If in nested mode, exit nested mode first
       if (repoFilter.value) {
         await debugLog('[Gitjump] Exiting nested filtered mode via Escape');
-        repoFilter.value = null;
-        searchQuery.value = previousSearchQuery.value;
-        debouncedSearchQuery.value = previousSearchQuery.value;
-
-        // Restore FILTERED mode if we have a query
-        if (searchQuery.value.trim()) {
-          panelMode.value = 'FILTERED';
-        }
+        exitFocusedMode();
         return;
       }
 
@@ -1545,6 +1624,8 @@ useKeyboardShortcuts(
         searchQuery.value += char;
       });
     },
+    enterFocusedMode: () => enterFocusedMode(),
+    exitFocusedMode: () => exitFocusedMode(),
   },
   () => panelMode.value !== 'HIDDEN',
 );
@@ -2497,23 +2578,15 @@ defineExpose({
   color: #adbac7;
 }
 
-.repo-filter-badge {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+.repo-filter-prefix {
   font-size: 14px;
-  color: #24292f;
-  background: #f6f8fa;
-  padding: 2px 6px;
-  border-radius: 4px;
-  border: 1px solid #d0d7de;
+  color: #57606a;
+  margin-left: 4px;
   white-space: nowrap;
 }
 
-.dark-theme .repo-filter-badge {
-  background: #22272e;
-  border-color: #444c56;
-  color: #adbac7;
+.dark-theme .repo-filter-prefix {
+  color: #768390;
 }
 
 .repo-filter-slash {
