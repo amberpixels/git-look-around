@@ -131,7 +131,8 @@
               'type-pr': item.type === 'pr',
               'type-issue': item.type === 'issue',
               'state-open': item.state === 'open',
-              'state-closed': item.state === 'closed',
+              'state-merged': item.merged,
+              'state-closed': item.state === 'closed' && !item.merged,
             }"
           >
             <!-- Skeleton result (placeholder while loading) -->
@@ -623,6 +624,8 @@ async function fetchSearchResults(query: string = '') {
           score: r._debug?.score || 0,
           isMine: r._debug?.isMine || false,
           state: r._debug?.state || 'N/A',
+          merged: r._debug?.merged ?? 'N/A',
+          draft: r._debug?.draft ?? 'N/A',
         })),
       );
       console.groupEnd();
@@ -1892,6 +1895,10 @@ defineExpose({
 
 .result-item.state-closed {
   opacity: 0.7;
+}
+
+.result-item.state-merged {
+  opacity: 1; /* Merged PRs should be fully visible */
 }
 
 .result-icon {

@@ -164,6 +164,19 @@ export async function getRepoIssues(
 }
 
 /**
+ * Get a single issue by number
+ * Useful for fetching issues that might not be in the initial sync
+ */
+export async function getIssue(
+  owner: string,
+  repo: string,
+  issueNumber: number,
+): Promise<GitHubIssue> {
+  const response = await githubFetch(`/repos/${owner}/${repo}/issues/${issueNumber}`);
+  return response.json() as Promise<GitHubIssue>;
+}
+
+/**
  * Get pull requests for a repository
  * Fetches open PRs and last 50 closed PRs (sorted by recently updated)
  */
@@ -196,6 +209,19 @@ export async function getRepoPullRequests(
   allPRs.push(...closedPRs);
 
   return allPRs;
+}
+
+/**
+ * Get a single pull request by number
+ * Useful for fetching PRs that aren't in the top 50 closed PRs
+ */
+export async function getPullRequest(
+  owner: string,
+  repo: string,
+  prNumber: number,
+): Promise<GitHubPullRequest> {
+  const response = await githubFetch(`/repos/${owner}/${repo}/pulls/${prNumber}`);
+  return response.json() as Promise<GitHubPullRequest>;
 }
 
 /**

@@ -416,6 +416,8 @@ export default defineBackground(() => {
                     isMine: r.isMine,
                     recentlyContributed: r.recentlyContributedByMe,
                     state: r.state,
+                    merged: r.merged,
+                    draft: r.draft,
                     updatedAt: r.updatedAt,
                     updatedAtFormatted: r.updatedAt
                       ? new Date(r.updatedAt).toISOString()
@@ -502,6 +504,8 @@ export default defineBackground(() => {
                       isMine: r.isMine,
                       recentlyContributed: r.recentlyContributedByMe,
                       state: r.state,
+                      merged: r.merged,
+                      draft: r.draft,
                       updatedAt: r.updatedAt,
                       updatedAtFormatted: r.updatedAt
                         ? new Date(r.updatedAt).toISOString()
@@ -609,12 +613,89 @@ export default defineBackground(() => {
                 isMine: r.isMine,
                 recentlyContributed: r.recentlyContributedByMe,
                 state: r.state,
+                merged: r.merged,
+                draft: r.draft,
                 updatedAt: r.updatedAt,
                 updatedAtFormatted: r.updatedAt ? new Date(r.updatedAt).toISOString() : 'unknown',
               },
             }));
 
             sendResponse({ success: true, data: debugResults, cacheSaved });
+            break;
+          }
+
+          case MessageType.FETCH_AND_SAVE_PR: {
+            const { owner, repo, prNumber, repoId } = message.payload as {
+              owner: string;
+              repo: string;
+              prNumber: number;
+              repoId: number;
+            };
+
+            try {
+              const { getPullRequest } = await import('@/src/api/github');
+              const { savePullRequest } = await import('@/src/storage/db');
+
+              // Fetch PR from GitHub
+              const pr = await getPullRequest(owner, repo, prNumber);
+
+              // Create PR record with merged field computed
+              const prRecord = {
+                ...pr,
+                merged: pr.merged_at !== null,
+                repo_id: repoId,
+                last_fetched_at: Date.now(),
+              };
+
+              // Save to database
+              await savePullRequest(prRecord);
+
+              console.log(`[Background] Fetched and saved PR #${prNumber} for ${owner}/${repo}`);
+              sendResponse({ success: true, data: prRecord });
+            } catch (error) {
+              console.error(`[Background] Failed to fetch PR #${prNumber}:`, error);
+              sendResponse({
+                success: false,
+                error: error instanceof Error ? error.message : 'Failed to fetch PR',
+              });
+            }
+            break;
+          }
+
+          case MessageType.FETCH_AND_SAVE_ISSUE: {
+            const { owner, repo, issueNumber, repoId } = message.payload as {
+              owner: string;
+              repo: string;
+              issueNumber: number;
+              repoId: number;
+            };
+
+            try {
+              const { getIssue } = await import('@/src/api/github');
+              const { saveIssue } = await import('@/src/storage/db');
+
+              // Fetch issue from GitHub
+              const issue = await getIssue(owner, repo, issueNumber);
+
+              // Create issue record
+              const issueRecord = {
+                ...issue,
+                repo_id: repoId,
+                last_fetched_at: Date.now(),
+              };
+
+              // Save to database
+              await saveIssue(issueRecord);
+
+              console.log(`[Background] Fetched and saved Issue #${issueNumber} for ${owner}/${repo}`);
+              sendResponse({ success: true, data: issueRecord });
+            } catch (error) {
+              console.error(`[Background] Failed to fetch Issue #${issueNumber}:`, error);
+              sendResponse({
+                success: false,
+                error: error instanceof Error ? error.message : 'Failed to fetch issue',
+              });
+            }
             break;
           }
 

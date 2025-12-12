@@ -435,6 +435,7 @@ export async function runSync(): Promise<void> {
               .then((prs) => {
                 const prRecords: PullRequestRecord[] = prs.map((pr) => ({
                   ...pr,
+                  merged: pr.merged_at !== null, // Compute merged from merged_at
                   repo_id: repo.id,
                   last_fetched_at: Date.now(),
                 }));
@@ -657,6 +658,7 @@ async function runQuickCheckOnce(): Promise<void> {
             : await getRepoPullRequests(owner, repoName);
           const prRecords: PullRequestRecord[] = allPRs.map((pr) => ({
             ...pr,
+            merged: pr.merged_at !== null, // Compute merged from merged_at
             repo_id: apiRepo.id,
             last_fetched_at: Date.now(),
           }));

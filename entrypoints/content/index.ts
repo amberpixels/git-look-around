@@ -78,7 +78,21 @@ async function detectAndRecordVisit() {
             });
 
             if (prsResponse.success && prsResponse.data) {
-              const pr = prsResponse.data.find((p: { number: number }) => p.number === prNumber);
+              let pr = prsResponse.data.find((p: { number: number }) => p.number === prNumber);
+
+              // If PR not found in database, fetch it on-demand
+              if (!pr) {
+                await debugWarn(`[Gitjump] PR #${prNumber} not in database, fetching on-demand`);
+                const fetchResponse = await browser.runtime.sendMessage({
+                  type: MessageType.FETCH_AND_SAVE_PR,
+                  payload: { owner, repo, prNumber, repoId: repoRecord.id },
+                });
+
+                if (fetchResponse.success && fetchResponse.data) {
+                  pr = fetchResponse.data;
+                }
+              }
+
               if (pr) {
                 await debugWarn(`[Gitjump] Recording visit to PR #${prNumber} (ID: ${pr.id})`);
                 await browser.runtime.sendMessage({
@@ -98,9 +112,25 @@ async function detectAndRecordVisit() {
             });
 
             if (issuesResponse.success && issuesResponse.data) {
-              const issue = issuesResponse.data.find(
+              let issue = issuesResponse.data.find(
                 (i: { number: number }) => i.number === issueNumber,
               );
+
+              // If issue not found in database, fetch it on-demand
+              if (!issue) {
+                await debugWarn(
+                  `[Gitjump] Issue #${issueNumber} not in database, fetching on-demand`,
+                );
+                const fetchResponse = await browser.runtime.sendMessage({
+                  type: MessageType.FETCH_AND_SAVE_ISSUE,
+                  payload: { owner, repo, issueNumber, repoId: repoRecord.id },
+                });
+
+                if (fetchResponse.success && fetchResponse.data) {
+                  issue = fetchResponse.data;
+                }
+              }
+
               if (issue) {
                 await debugWarn(
                   `[Gitjump] Recording visit to Issue #${issueNumber} (ID: ${issue.id})`,
