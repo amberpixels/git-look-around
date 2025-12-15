@@ -1,10 +1,10 @@
 import { ref } from 'vue';
 import type { SearchableEntity, SearchResultItem } from './useUnifiedSearch';
 
-const CACHE_KEY = 'gitjump_search_entities';
-const FIRST_RESULT_KEY = 'gitjump_first_result';
-const RESULTS_CACHE_KEY = 'gitjump_search_results';
-const CONTRIBUTORS_KEY = 'gitjump_contributors';
+const CACHE_KEY = 'git_look_around_search_entities';
+const FIRST_RESULT_KEY = 'git_look_around_first_result';
+const RESULTS_CACHE_KEY = 'git_look_around_search_results';
+const CONTRIBUTORS_KEY = 'git_look_around_contributors';
 
 export function useSearchCache() {
   const cachedString = ref<string | null>(null);
@@ -21,7 +21,7 @@ export function useSearchCache() {
       cachedString.value = json;
       return JSON.parse(json);
     } catch (e) {
-      console.error('[Gitjump] Failed to load search cache', e);
+      console.error('[Git Look Around] Failed to load search cache', e);
       return null;
     }
   }
@@ -36,7 +36,7 @@ export function useSearchCache() {
     try {
       json = JSON.stringify(entities);
     } catch (e) {
-      console.error('[Gitjump] Failed to stringify entities', e);
+      console.error('[Git Look Around] Failed to stringify entities', e);
       // If we can't stringify, we can't compare.
       // Assume it's new data and return true so UI updates.
       return true;
@@ -53,7 +53,7 @@ export function useSearchCache() {
     try {
       await browser.storage.local.set({ [CACHE_KEY]: json });
     } catch (e) {
-      console.error('[Gitjump] Failed to save search cache (likely quota exceeded)', e);
+      console.error('[Git Look Around] Failed to save search cache (likely quota exceeded)', e);
       // Return true because data CHANGED, even if we couldn't persist it
       return true;
     }

@@ -47,7 +47,7 @@ async function detectAndRecordVisit() {
   }
 
   const fullName = `${owner}/${repo}`;
-  await debugWarn(`[Gitjump] On repo: ${fullName}`);
+  await debugWarn(`[Git Look Around] On repo: ${fullName}`);
 
   // Check if we're on a PR or Issue page
   const prMatch = path.match(/^\/[^/]+\/[^/]+\/pull\/(\d+)/);
@@ -65,7 +65,9 @@ async function detectAndRecordVisit() {
 
       if (repoRecord) {
         // Always record repo visit
-        await debugWarn(`[Gitjump] Recording visit to repo ${fullName} (ID: ${repoRecord.id})`);
+        await debugWarn(
+          `[Git Look Around] Recording visit to repo ${fullName} (ID: ${repoRecord.id})`,
+        );
         await browser.runtime.sendMessage({
           type: MessageType.RECORD_VISIT,
           payload: { type: 'repo', entityId: repoRecord.id },
@@ -84,7 +86,9 @@ async function detectAndRecordVisit() {
 
             // If PR not found in database, fetch it on-demand
             if (!pr) {
-              await debugWarn(`[Gitjump] PR #${prNumber} not in database, fetching on-demand`);
+              await debugWarn(
+                `[Git Look Around] PR #${prNumber} not in database, fetching on-demand`,
+              );
               const fetchResponse = await browser.runtime.sendMessage({
                 type: MessageType.FETCH_AND_SAVE_PR,
                 payload: { owner, repo, prNumber, repoId: repoRecord.id },
@@ -96,7 +100,9 @@ async function detectAndRecordVisit() {
             }
 
             if (pr) {
-              await debugWarn(`[Gitjump] Recording visit to PR #${prNumber} (ID: ${pr.id})`);
+              await debugWarn(
+                `[Git Look Around] Recording visit to PR #${prNumber} (ID: ${pr.id})`,
+              );
               await browser.runtime.sendMessage({
                 type: MessageType.RECORD_VISIT,
                 payload: { type: 'pr', entityId: pr.id },
@@ -121,7 +127,7 @@ async function detectAndRecordVisit() {
             // If issue not found in database, fetch it on-demand
             if (!issue) {
               await debugWarn(
-                `[Gitjump] Issue #${issueNumber} not in database, fetching on-demand`,
+                `[Git Look Around] Issue #${issueNumber} not in database, fetching on-demand`,
               );
               const fetchResponse = await browser.runtime.sendMessage({
                 type: MessageType.FETCH_AND_SAVE_ISSUE,
@@ -135,7 +141,7 @@ async function detectAndRecordVisit() {
 
             if (issue) {
               await debugWarn(
-                `[Gitjump] Recording visit to Issue #${issueNumber} (ID: ${issue.id})`,
+                `[Git Look Around] Recording visit to Issue #${issueNumber} (ID: ${issue.id})`,
               );
               await browser.runtime.sendMessage({
                 type: MessageType.RECORD_VISIT,
@@ -145,13 +151,15 @@ async function detectAndRecordVisit() {
           }
         }
 
-        await debugWarn(`[Gitjump] Visit recorded successfully`);
+        await debugWarn(`[Git Look Around] Visit recorded successfully`);
       } else {
-        await debugWarn(`[Gitjump] Repo ${fullName} not in database yet, skipping visit tracking`);
+        await debugWarn(
+          `[Git Look Around] Repo ${fullName} not in database yet, skipping visit tracking`,
+        );
       }
     }
   } catch (error) {
-    console.error('[Gitjump] Failed to record visit:', error);
+    console.error('[Git Look Around] Failed to record visit:', error);
   }
 }
 
@@ -160,11 +168,11 @@ export default defineContentScript({
   async main(_ctx) {
     // Initialize debug mode cache
     await initDebugMode();
-    await debugWarn('[Gitjump] Content script loaded on GitHub');
+    await debugWarn('[Git Look Around] Content script loaded on GitHub');
 
     // Create container for Vue app
     const container = document.createElement('div');
-    container.id = 'gitjump-root';
+    container.id = 'git-look-around-root';
     document.body.appendChild(container);
 
     // Mount Vue app
@@ -182,7 +190,7 @@ export default defineContentScript({
 
     // Track visit when page loads
     detectAndRecordVisit().catch((err) => {
-      console.error('[Gitjump] Failed to record visit:', err);
+      console.error('[Git Look Around] Failed to record visit:', err);
     });
 
     // Track visits on navigation (GitHub uses pushState for navigation)
@@ -191,7 +199,7 @@ export default defineContentScript({
       if (window.location.pathname !== lastPath) {
         lastPath = window.location.pathname;
         detectAndRecordVisit().catch((err) => {
-          console.error('[Gitjump] Failed to record visit:', err);
+          console.error('[Git Look Around] Failed to record visit:', err);
         });
       }
     });

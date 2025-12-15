@@ -1,8 +1,8 @@
 {
-  "name": "gitjump",
-  "description": "GitHub fuzzy finder browser extension",
+  "name": "git-look-around",
+  "description": "Git Look Around (Github) browser extension",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "NODE_OPTIONS='--no-webstorage' wxt",

@@ -1,5 +1,5 @@
 /**
- * Type definitions for Gitjump
+ * Type definitions for Git Look Around
  * All interfaces and types used across the extension
  */
 
