@@ -20,7 +20,7 @@ export function useKeyboardShortcuts(actions: KeyboardActions, isVisible: () => 
       return;
     }
 
-    debugLogSync('[Gitjump] Composable: handleKeydown', e.key);
+    debugLogSync('[Git Look Around] Composable: handleKeydown', e.key);
 
     // Check if user is typing in an input field, textarea, or contenteditable element
     const target = e.target as HTMLElement;
@@ -44,7 +44,7 @@ export function useKeyboardShortcuts(actions: KeyboardActions, isVisible: () => 
     }
 
     if (e.key === 'Escape') {
-      debugLogSync('[Gitjump] Shortcut: Escape');
+      debugLogSync('[Git Look Around] Shortcut: Escape');
       // Always prevent default and stop propagation for Escape to avoid conflicts
       e.preventDefault();
       e.stopPropagation();
@@ -54,7 +54,7 @@ export function useKeyboardShortcuts(actions: KeyboardActions, isVisible: () => 
     }
 
     if (e.key === 'ArrowDown') {
-      debugLogSync('[Gitjump] Shortcut: ArrowDown');
+      debugLogSync('[Git Look Around] Shortcut: ArrowDown');
       e.preventDefault();
       e.stopPropagation();
       actions.moveNext();
@@ -62,7 +62,7 @@ export function useKeyboardShortcuts(actions: KeyboardActions, isVisible: () => 
     }
 
     if (e.key === 'ArrowUp') {
-      debugLogSync('[Gitjump] Shortcut: ArrowUp');
+      debugLogSync('[Git Look Around] Shortcut: ArrowUp');
       e.preventDefault();
       e.stopPropagation();
       actions.movePrev();
@@ -79,7 +79,7 @@ export function useKeyboardShortcuts(actions: KeyboardActions, isVisible: () => 
           return; // Let the input handle cursor navigation
         }
       }
-      debugLogSync('[Gitjump] Shortcut: ArrowRight');
+      debugLogSync('[Git Look Around] Shortcut: ArrowRight');
       e.preventDefault();
       e.stopPropagation();
       actions.enterFocusedMode();
@@ -95,7 +95,7 @@ export function useKeyboardShortcuts(actions: KeyboardActions, isVisible: () => 
           return; // Let the input handle cursor navigation
         }
       }
-      debugLogSync('[Gitjump] Shortcut: ArrowLeft');
+      debugLogSync('[Git Look Around] Shortcut: ArrowLeft');
       e.preventDefault();
       e.stopPropagation();
       actions.exitFocusedMode();
@@ -103,7 +103,7 @@ export function useKeyboardShortcuts(actions: KeyboardActions, isVisible: () => 
     }
 
     if (e.key === 'Enter') {
-      debugLogSync('[Gitjump] Shortcut: Enter');
+      debugLogSync('[Git Look Around] Shortcut: Enter');
       e.preventDefault();
       e.stopPropagation();
       const newTab = e.metaKey || e.ctrlKey;
@@ -112,7 +112,7 @@ export function useKeyboardShortcuts(actions: KeyboardActions, isVisible: () => 
     }
 
     if (e.key === 'Tab') {
-      debugLogSync('[Gitjump] Shortcut: Tab');
+      debugLogSync('[Git Look Around] Shortcut: Tab');
       e.preventDefault();
       e.stopPropagation();
       actions.tab();
@@ -121,7 +121,7 @@ export function useKeyboardShortcuts(actions: KeyboardActions, isVisible: () => 
 
     // Typing handling (only if no modifiers and not in a field)
     if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey && !isTypingInField) {
-      debugLogSync('[Gitjump] Shortcut: Typing', e.key);
+      debugLogSync('[Git Look Around] Shortcut: Typing', e.key);
       e.preventDefault();
       e.stopPropagation();
       actions.focusInput();

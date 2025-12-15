@@ -100,7 +100,7 @@ function extractContributors(
 }
 
 export default defineBackground(() => {
-  console.warn('[Background] Gitjump background initialized', { id: browser.runtime.id });
+  console.warn('[Background] Git Look Around background initialized', { id: browser.runtime.id });
 
   // Cache generation counter to prevent stale updates
   let cacheGeneration = 0;

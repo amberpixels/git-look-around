@@ -1,12 +1,12 @@
 <template>
   <div class="options-container">
-    <h1>Gitjump Settings</h1>
+    <h1>Git Look Around Settings</h1>
 
     <div class="section">
       <h2>GitHub Authentication</h2>
 
       <div v-if="!isAuthenticated" class="auth-form">
-        <p class="instructions">To use Gitjump, you need a GitHub Personal Access Token.</p>
+        <p class="instructions">To use Git Look Around, you need a GitHub Personal Access Token.</p>
 
         <ol class="steps">
           <li>
@@ -16,7 +16,7 @@
             >
           </li>
           <li>Click "Generate new token (classic)"</li>
-          <li>Give it a name (e.g., "Gitjump")</li>
+          <li>Give it a name (e.g., "Git Look Around")</li>
           <li>Select scopes: <code>repo</code>, <code>read:user</code>, <code>read:org</code></li>
           <li>Click "Generate token"</li>
           <li>Copy and paste the token below:</li>

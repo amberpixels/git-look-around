@@ -1,11 +1,11 @@
 /**
- * IndexedDB storage layer for Gitjump
+ * IndexedDB storage layer for Git Look Around
  * Stores repos, issues, pull requests, and metadata
  */
 
 import type { RepoRecord, IssueRecord, PullRequestRecord, MetaRecord } from '@/src/types';
 
-const DB_NAME = 'gitjump';
+const DB_NAME = 'git-look-around';
 const DB_VERSION = 5; // Bumped for last_contributed_at field
 
 // Store names

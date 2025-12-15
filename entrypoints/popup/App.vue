@@ -79,7 +79,7 @@ function getRateLimitResetTime(): string {
 <template>
   <div class="popup" :class="{ 'dark-theme': isDarkTheme }">
     <div class="header">
-      <h1>Gitjump</h1>
+      <h1>Git Look Around</h1>
       <p class="subtitle">GitHub Fuzzy Finder</p>
     </div>
 
@@ -123,12 +123,14 @@ function getRateLimitResetTime(): string {
 
     <div v-else class="unauthenticated">
       <div class="status-badge error">⚠ Not Authenticated</div>
-      <p class="message">You need to configure your GitHub token to use Gitjump.</p>
+      <p class="message">You need to configure your GitHub token to use Git Look Around.</p>
       <button class="button" @click="openOptions">Open Settings</button>
     </div>
 
     <div class="footer">
-      <a href="https://github.com/amberpixels/gitjump" target="_blank" class="link"> GitHub </a>
+      <a href="https://github.com/amberpixels/git-look-around" target="_blank" class="link">
+        GitHub
+      </a>
     </div>
   </div>
 </template>
