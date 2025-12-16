@@ -7,6 +7,7 @@ const STORAGE_KEYS = {
   GITHUB_TOKEN: 'github_token',
   IMPORT_PREFERENCES: 'import_preferences',
   THEME_CACHE: 'theme_cache',
+  HOTKEY_PREFERENCES: 'hotkey_preferences',
 } as const;
 
 /**
@@ -16,6 +17,16 @@ export interface ImportPreferences {
   importIssues: boolean;
   importPullRequests: boolean;
   debugMode: boolean;
+}
+
+/**
+ * User preferences for keyboard shortcuts
+ */
+export type HotkeyMode = 'github-only' | 'custom-hosts';
+
+export interface HotkeyPreferences {
+  mode: HotkeyMode;
+  customHosts: string[]; // List of custom host patterns like "example.com", "*.mycompany.com"
 }
 
 /**
@@ -71,6 +82,28 @@ export async function getImportPreferences(): Promise<ImportPreferences> {
 export async function saveImportPreferences(preferences: ImportPreferences): Promise<void> {
   await browser.storage.local.set({
     [STORAGE_KEYS.IMPORT_PREFERENCES]: preferences,
+  });
+}
+
+/**
+ * Get hotkey preferences (defaults: only on GitHub sites)
+ */
+export async function getHotkeyPreferences(): Promise<HotkeyPreferences> {
+  const result = await browser.storage.local.get(STORAGE_KEYS.HOTKEY_PREFERENCES);
+  const prefs = result[STORAGE_KEYS.HOTKEY_PREFERENCES] as HotkeyPreferences | undefined;
+
+  return {
+    mode: prefs?.mode ?? 'github-only',
+    customHosts: prefs?.customHosts ?? [],
+  };
+}
+
+/**
+ * Save hotkey preferences
+ */
+export async function saveHotkeyPreferences(preferences: HotkeyPreferences): Promise<void> {
+  await browser.storage.local.set({
+    [STORAGE_KEYS.HOTKEY_PREFERENCES]: preferences,
   });
 }
 

@@ -14,7 +14,7 @@ export default defineConfig({
           default: 'Ctrl+Shift+K',
           mac: 'Command+Shift+K',
         },
-        description: 'Toggle Git-Look-Around overlay',
+        description: 'Toggle Command Palette',
       },
     },
   },

@@ -164,8 +164,38 @@ async function detectAndRecordVisit() {
 }
 
 export default defineContentScript({
-  matches: ['*://github.com/*', '*://*.github.com/*'],
+  matches: ['*://*/*'], // Match all sites initially, will filter in main()
   async main(_ctx) {
+    // Check if we should run on this page based on user preferences
+    const { getHotkeyPreferences } = await import('@/src/storage/chrome');
+    const hotkeyPrefs = await getHotkeyPreferences();
+
+    const currentHost = window.location.hostname;
+    let shouldRun = false;
+
+    if (hotkeyPrefs.mode === 'github-only') {
+      // Only run on GitHub and Gist
+      shouldRun = currentHost === 'github.com' || currentHost.endsWith('.github.com');
+    } else if (hotkeyPrefs.mode === 'custom-hosts') {
+      // Check if current host matches any custom pattern (GitHub is always included)
+      shouldRun =
+        currentHost === 'github.com' ||
+        currentHost.endsWith('.github.com') ||
+        hotkeyPrefs.customHosts.some((pattern) => {
+          // Convert wildcard pattern to regex
+          const regexPattern = pattern
+            .replace(/\./g, '\\.')
+            .replace(/\*/g, '.*')
+            .replace(/^(.*)$/, '^$1$');
+          return new RegExp(regexPattern).test(currentHost);
+        });
+    }
+
+    if (!shouldRun) {
+      await debugWarn(`[Git Look Around] Skipping initialization on ${currentHost}`);
+      return;
+    }
+
     // Initialize debug mode cache
     await initDebugMode();
     await debugWarn('[Git Look Around] Content script loaded on GitHub');
