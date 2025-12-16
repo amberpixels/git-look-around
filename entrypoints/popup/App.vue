@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { isAuthenticated as checkAuth, getImportPreferences } from '@/src/storage/chrome';
+import { isAuthenticated as checkAuth, getDebugMode } from '@/src/storage/chrome';
 import { useImportStatus } from '@/src/composables/useImportStatus';
 import { useRateLimit } from '@/src/composables/useRateLimit';
 import { MessageType } from '@/src/messages/types';
@@ -71,8 +71,7 @@ onMounted(async () => {
     isAuthenticated.value = await checkAuth();
 
     // Check debug mode
-    const prefs = await getImportPreferences();
-    isDebugMode.value = prefs.debugMode;
+    isDebugMode.value = await getDebugMode();
 
     // Load keyboard shortcut
     await loadShortcut();

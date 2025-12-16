@@ -468,6 +468,7 @@ import { useRepos } from '@/src/composables/useRepos';
 import { useImportStatus } from '@/src/composables/useImportStatus';
 import { useRateLimit } from '@/src/composables/useRateLimit';
 import { useImportPreferences } from '@/src/composables/useImportPreferences';
+import { getDebugMode } from '@/src/storage/chrome';
 import { useBackgroundMessage } from '@/src/composables/useBackgroundMessage';
 import { useKeyboardShortcuts } from '@/src/composables/useKeyboardShortcuts';
 import { useSearchCache } from '@/src/composables/useSearchCache';
@@ -635,6 +636,12 @@ const {
 const { status: syncStatus } = useImportStatus(500);
 const { rateLimit } = useRateLimit(0);
 const { preferences } = useImportPreferences();
+const isDebugMode = ref(false);
+
+// Load debug mode on mount
+onMounted(async () => {
+  isDebugMode.value = await getDebugMode();
+});
 const { loadFirstResult, loadContributors } = useSearchCache();
 
 // Pass current username (reactive) for authorship-based sorting
@@ -648,7 +655,7 @@ const rawSearchResults = ref<SearchResultItem[]>([]);
  */
 async function fetchSearchResults(query: string = '') {
   try {
-    const messageType = preferences.value.debugMode ? MessageType.DEBUG_SEARCH : MessageType.SEARCH;
+    const messageType = isDebugMode.value ? MessageType.DEBUG_SEARCH : MessageType.SEARCH;
     const currentRepoName = getCurrentRepoFromUrl();
 
     const results = await sendMessage<SearchResultItem[]>(messageType, {
@@ -658,7 +665,7 @@ async function fetchSearchResults(query: string = '') {
     });
 
     // Log debug info if debug mode is enabled
-    if (preferences.value.debugMode) {
+    if (isDebugMode.value) {
       console.group('[CommandPalette] Search Results Debug');
       console.log('Query:', query || '(empty - showing all)');
       console.log('Total results:', results.length);

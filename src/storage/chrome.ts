@@ -8,6 +8,7 @@ const STORAGE_KEYS = {
   IMPORT_PREFERENCES: 'import_preferences',
   THEME_CACHE: 'theme_cache',
   HOTKEY_PREFERENCES: 'hotkey_preferences',
+  DEBUG_MODE: 'debug_mode',
 } as const;
 
 /**
@@ -16,7 +17,6 @@ const STORAGE_KEYS = {
 export interface ImportPreferences {
   importIssues: boolean;
   importPullRequests: boolean;
-  debugMode: boolean;
 }
 
 /**
@@ -68,11 +68,10 @@ export async function getImportPreferences(): Promise<ImportPreferences> {
   const result = await browser.storage.local.get(STORAGE_KEYS.IMPORT_PREFERENCES);
   const prefs = result[STORAGE_KEYS.IMPORT_PREFERENCES] as ImportPreferences | undefined;
 
-  // Default: import both, debug mode off
+  // Default: import both
   return {
     importIssues: prefs?.importIssues ?? true,
     importPullRequests: prefs?.importPullRequests ?? true,
-    debugMode: prefs?.debugMode ?? false,
   };
 }
 
@@ -92,9 +91,20 @@ export async function getHotkeyPreferences(): Promise<HotkeyPreferences> {
   const result = await browser.storage.local.get(STORAGE_KEYS.HOTKEY_PREFERENCES);
   const prefs = result[STORAGE_KEYS.HOTKEY_PREFERENCES] as HotkeyPreferences | undefined;
 
+  // Ensure customHosts is always an array (handle object with numeric keys)
+  let customHosts: string[] = [];
+  if (prefs?.customHosts) {
+    if (Array.isArray(prefs.customHosts)) {
+      customHosts = prefs.customHosts;
+    } else if (typeof prefs.customHosts === 'object') {
+      // Convert object with numeric keys to array
+      customHosts = Object.values(prefs.customHosts);
+    }
+  }
+
   return {
     mode: prefs?.mode ?? 'github-only',
-    customHosts: prefs?.customHosts ?? [],
+    customHosts,
   };
 }
 
@@ -102,8 +112,33 @@ export async function getHotkeyPreferences(): Promise<HotkeyPreferences> {
  * Save hotkey preferences
  */
 export async function saveHotkeyPreferences(preferences: HotkeyPreferences): Promise<void> {
+  // Ensure customHosts is stored as a proper array
+  const toSave: HotkeyPreferences = {
+    mode: preferences.mode,
+    customHosts: Array.isArray(preferences.customHosts)
+      ? [...preferences.customHosts]
+      : Object.values(preferences.customHosts || {}),
+  };
+
   await browser.storage.local.set({
-    [STORAGE_KEYS.HOTKEY_PREFERENCES]: preferences,
+    [STORAGE_KEYS.HOTKEY_PREFERENCES]: toSave,
+  });
+}
+
+/**
+ * Get debug mode flag
+ */
+export async function getDebugMode(): Promise<boolean> {
+  const result = await browser.storage.local.get(STORAGE_KEYS.DEBUG_MODE);
+  return result[STORAGE_KEYS.DEBUG_MODE] ?? false;
+}
+
+/**
+ * Save debug mode flag
+ */
+export async function saveDebugMode(enabled: boolean): Promise<void> {
+  await browser.storage.local.set({
+    [STORAGE_KEYS.DEBUG_MODE]: enabled,
   });
 }
 

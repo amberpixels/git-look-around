@@ -115,7 +115,7 @@
             type="radio"
             value="github-only"
             class="radio"
-            @change="saveHotkeyPrefs"
+            @change="onModeChange"
           />
           <span>Only on GitHub (github.com, gist.github.com)</span>
         </label>
@@ -126,7 +126,7 @@
             type="radio"
             value="custom-hosts"
             class="radio"
-            @change="saveHotkeyPrefs"
+            @change="onModeChange"
           />
           <span>Custom websites (specify below)</span>
         </label>
@@ -149,6 +149,9 @@
         <p v-if="hotkeyPreferencesSaved" class="warning small">
           ⚠️ Extension will reload to apply changes...
         </p>
+        <p v-else-if="hotkeyPreferences.mode === 'custom-hosts'" class="hint">
+          Enter domains and press Enter or click outside to save
+        </p>
       </div>
     </div>
 
@@ -158,12 +161,7 @@
 
       <div class="preferences">
         <label class="checkbox-label">
-          <input
-            v-model="preferences.debugMode"
-            type="checkbox"
-            class="checkbox"
-            @change="savePreferences"
-          />
+          <input v-model="debugMode" type="checkbox" class="checkbox" @change="saveDebugModeFlag" />
           <span>Debug Mode (verbose console logging)</span>
         </label>
       </div>
@@ -185,6 +183,8 @@ import {
   getHotkeyPreferences,
   saveHotkeyPreferences,
   type HotkeyPreferences,
+  getDebugMode,
+  saveDebugMode,
 } from '@/src/storage/chrome';
 
 const tokenInput = ref('');
@@ -196,9 +196,9 @@ const showTooltip = ref(false);
 const preferences = ref<ImportPreferences>({
   importIssues: true,
   importPullRequests: true,
-  debugMode: false,
 });
 const preferencesSaved = ref(false);
+const debugMode = ref(false);
 const shortcutKey = ref('');
 const hotkeyPreferences = ref<HotkeyPreferences>({
   mode: 'github-only',
@@ -225,19 +225,32 @@ onMounted(async () => {
 
   // Load preferences
   preferences.value = await getImportPreferences();
+  debugMode.value = await getDebugMode();
   hotkeyPreferences.value = await getHotkeyPreferences();
   customHostsInput.value = hotkeyPreferences.value.customHosts.join(', ');
 
+  console.log('[Options] Loaded hotkey preferences:', hotkeyPreferences.value);
+  console.log('[Options] Custom hosts input:', customHostsInput.value);
+
   // Load keyboard shortcut
-  loadShortcut();
+  await loadShortcut();
+  console.log('[Options] After loadShortcut, shortcutKey:', shortcutKey.value);
 });
 
 async function loadShortcut() {
   try {
     const commands = await browser.commands.getAll();
+    console.log('[Options] All commands:', commands);
+
+    // Find toggle-overlay command specifically (not _execute_action)
     const toggleCommand = commands.find((cmd) => cmd.name === 'toggle-overlay');
+    console.log('[Options] Toggle command:', toggleCommand);
+
     if (toggleCommand?.shortcut) {
       shortcutKey.value = toggleCommand.shortcut;
+      console.log('[Options] Shortcut loaded:', shortcutKey.value);
+    } else {
+      console.log('[Options] No shortcut found');
     }
   } catch (e) {
     console.error('Failed to load shortcut:', e);
@@ -303,13 +316,40 @@ async function savePreferences() {
   }, 2000);
 }
 
+async function saveDebugModeFlag() {
+  await saveDebugMode(debugMode.value);
+  preferencesSaved.value = true;
+
+  // Hide success message after 2 seconds
+  window.setTimeout(() => {
+    preferencesSaved.value = false;
+  }, 2000);
+}
+
 function updateCustomHosts() {
   const hosts = customHostsInput.value
     .split(',')
     .map((h) => h.trim())
     .filter((h) => h.length > 0);
+
+  console.log('[Options] Saving custom hosts:', hosts); // Debug log
   hotkeyPreferences.value.customHosts = hosts;
   saveHotkeyPrefs();
+}
+
+async function onModeChange() {
+  console.log('[Options] Mode changed to:', hotkeyPreferences.value.mode); // Debug log
+
+  // If switching to github-only, save immediately and reload
+  if (hotkeyPreferences.value.mode === 'github-only') {
+    await saveHotkeyPrefs();
+  }
+  // If switching to custom-hosts, just save the mode (not the hosts yet)
+  // Don't reload yet - wait for user to enter domains
+  else if (hotkeyPreferences.value.mode === 'custom-hosts') {
+    // Save mode change without reloading
+    await saveHotkeyPreferences(hotkeyPreferences.value);
+  }
 }
 
 async function saveHotkeyPrefs() {
@@ -634,12 +674,14 @@ h2 {
 
 .text-input {
   width: 100%;
+  max-width: 100%;
   padding: 8px 12px;
   font-size: 14px;
   border: 1px solid var(--border-color);
   border-radius: 6px;
   background: var(--input-bg);
   color: var(--text-primary);
+  box-sizing: border-box;
 }
 
 .text-input:focus {

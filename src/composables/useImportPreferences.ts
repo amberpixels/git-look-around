@@ -9,7 +9,6 @@ export function useImportPreferences() {
   const preferences = ref<ImportPreferences>({
     importIssues: true,
     importPullRequests: true,
-    debugMode: false,
   });
   const loading = ref(true);
 
