@@ -2,7 +2,7 @@
  * Debug logger utility that respects user's debug mode preference
  */
 
-import { getSyncPreferences } from '@/src/storage/chrome';
+import { getImportPreferences } from '@/src/storage/chrome';
 
 let debugEnabled: boolean | null = null;
 let lastChecked = 0;
@@ -21,7 +21,7 @@ async function isDebugEnabled(): Promise<boolean> {
 
   // Fetch fresh value
   try {
-    const prefs = await getSyncPreferences();
+    const prefs = await getImportPreferences();
     debugEnabled = prefs.debugMode;
     lastChecked = now;
     return debugEnabled;

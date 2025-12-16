@@ -49,7 +49,7 @@ const TWO_MONTHS_MS = 2 * 30 * 24 * 60 * 60 * 1000;
 /**
  * Extract prefix from a repo name (everything before first hyphen)
  * Examples:
- *   "hellotickets/ht-mixer" -> "ht-"
+ *   "mycompany/mc-acme" -> "mc-"
  *   "myorg/pr-backend" -> "pr-"
  *   "github/no-prefix" -> null
  */
@@ -77,7 +77,7 @@ async function analyzeDominantOrgs(repos: RepoRecord[]): Promise<string[]> {
 
   // Count repos per organization
   for (const repo of repos) {
-    const org = repo.full_name.split('/')[0]; // Get "hellotickets" from "hellotickets/ht-mixer"
+    const org = repo.full_name.split('/')[0]; // Get "my-company" from "my-company/mc-acme"
     if (org) {
       orgCounts.set(org, (orgCounts.get(org) || 0) + 1);
     }
@@ -150,10 +150,10 @@ async function analyzeCommonPrefixes(repos: RepoRecord[]): Promise<string[]> {
  * Calculate search score for a text match
  * Scoring priority:
  * 1. Exact match: 1000
- * 2. Common prefix + query: 950 (e.g., "ht-mixer" when searching "mixer" and "ht-" is common)
- * 3. Starts with query: 800 (e.g., "mixer-app")
- * 4. Word/segment ends with query: 600 (e.g., "ht-mixer" when searching "mixer", no common prefix)
- * 5. Word boundary at start: 500 (e.g., " mixer" or "-mixer")
+ * 2. Common prefix + query: 950 (e.g., "my-foobar" when searching "foobar" and "my-" is common)
+ * 3. Starts with query: 800 (e.g., "foobar-app" when searching "foobar")
+ * 4. Word/segment ends with query: 600 (e.g., "my-foobar" when searching "foobar", no common prefix)
+ * 5. Word boundary at start: 500 (e.g., " foobar" or "-foobar")
  * 6. Word boundary anywhere: 400
  * 7. Space word boundary: 300
  * 8. Contains query: 100 (NOT for single-char queries)
@@ -161,7 +161,7 @@ async function analyzeCommonPrefixes(repos: RepoRecord[]): Promise<string[]> {
  * Special rule: Single-character queries (1 char) only match:
  * - Starts with (prefix)
  * - After word boundaries (-, /, _, ., space)
- * This prevents matching "curator" when searching "u"
+ * This prevents matching "foobar" when searching "o"
  */
 function calculateMatchScore(text: string, query: string, commonPrefixes: string[] = []): number {
   const lowerText = text.toLowerCase();
@@ -171,12 +171,12 @@ function calculateMatchScore(text: string, query: string, commonPrefixes: string
   // Exact match
   if (lowerText === lowerQuery) return 1000;
 
-  // Check for common prefix + query (e.g., "ht-mixer" when searching "mixer" and "ht-" is common)
+  // Check for common prefix + query (e.g., "my-foobar" when searching "foobar" and "my-" is common)
   // This should rank very high - almost like an exact match
   for (const prefix of commonPrefixes) {
     const prefixPattern = prefix.toLowerCase();
     if (lowerText.includes(prefixPattern + lowerQuery)) {
-      // Check if this is the main part (e.g., "org/ht-mixer" or just "ht-mixer")
+      // Check if this is the main part (e.g., "org/my-foobar" or just "my-foobar")
       const afterQuery =
         lowerText.indexOf(prefixPattern + lowerQuery) + prefixPattern.length + lowerQuery.length;
       // Higher score if query is at end or followed by word boundary
@@ -193,8 +193,8 @@ function calculateMatchScore(text: string, query: string, commonPrefixes: string
   // Starts with query
   if (lowerText.startsWith(lowerQuery)) return 800;
 
-  // Word/segment ends with query (e.g., "ht-mixer" ends with "mixer")
-  // This handles cases like "ht-mixer", "my-project", "some/path"
+  // Word/segment ends with query (e.g., "my-foobar" ends with "foobar")
+  // This handles cases like "my-foobar", "my-project", "some/path"
   const wordBoundaryChars = [' ', '-', '/', '_', '.'];
   for (const char of wordBoundaryChars) {
     if (lowerText.endsWith(lowerQuery) || lowerText.includes(`${char}${lowerQuery}`)) {
@@ -205,10 +205,10 @@ function calculateMatchScore(text: string, query: string, commonPrefixes: string
       ) {
         return 500; // Word boundary at start of word
       }
-      // Check if query appears after a boundary (e.g., "ht-mixer" contains "-mixer")
+      // Check if query appears after a boundary (e.g., "my-foobar" contains "-foobar")
       const index = lowerText.indexOf(`${char}${lowerQuery}`);
       if (index >= 0) {
-        // Higher score if it's the end of a segment (e.g., "ht-mixer" not "ht-mixer-v2")
+        // Higher score if it's the end of a segment (e.g., "my-foobar" not "my-foobar-v2")
         const afterQuery = index + char.length + lowerQuery.length;
         if (afterQuery === lowerText.length || wordBoundaryChars.includes(lowerText[afterQuery])) {
           return 600; // Ends with query after boundary
@@ -282,7 +282,7 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
       );
 
       // If org is dominant (>=80% of repos), ignore it and only match on repo name
-      // This ensures "curator" matches "hellotickets/curator" with exact match score
+      // This ensures "foobar" matches "mycompany/foobar" with exact match score
       if (isDominantOrg) {
         repoNameForMatching = repo.full_name.split('/').pop() || repo.full_name;
       }
