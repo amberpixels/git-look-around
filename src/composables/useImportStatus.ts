@@ -1,15 +1,15 @@
 /**
- * Composable for accessing sync status from background worker
+ * Composable for accessing import status from background worker
  */
 import { ref, onMounted, onUnmounted } from 'vue';
 import { useBackgroundMessage } from './useBackgroundMessage';
 import { MessageType } from '@/src/messages/types';
-import type { SyncStatus } from '@/src/sync/engine';
+import type { ImportStatus } from '@/src/import/engine';
 
-export function useSyncStatus(pollInterval = 5000) {
+export function useImportStatus(pollInterval = 5000) {
   const { sendMessage } = useBackgroundMessage();
 
-  const status = ref<SyncStatus | null>(null);
+  const status = ref<ImportStatus | null>(null);
   const loading = ref(true);
   const error = ref<string | null>(null);
 
@@ -17,11 +17,11 @@ export function useSyncStatus(pollInterval = 5000) {
 
   async function fetchStatus() {
     try {
-      status.value = await sendMessage<SyncStatus>(MessageType.GET_SYNC_STATUS);
+      status.value = await sendMessage<ImportStatus>(MessageType.GET_IMPORT_STATUS);
       error.value = null;
     } catch (err) {
-      error.value = err instanceof Error ? err.message : 'Failed to fetch sync status';
-      console.error('[useSyncStatus] Error:', err);
+      error.value = err instanceof Error ? err.message : 'Failed to fetch import status';
+      console.error('[useImportStatus] Error:', err);
     } finally {
       loading.value = false;
     }
@@ -29,10 +29,10 @@ export function useSyncStatus(pollInterval = 5000) {
 
   async function forceSync() {
     try {
-      await sendMessage(MessageType.FORCE_SYNC);
-      await fetchStatus(); // Refresh status after forcing sync
+      await sendMessage(MessageType.FORCE_IMPORT);
+      await fetchStatus(); // Refresh status after forcing import
     } catch (err) {
-      error.value = err instanceof Error ? err.message : 'Failed to force sync';
+      error.value = err instanceof Error ? err.message : 'Failed to force import';
       throw err;
     }
   }

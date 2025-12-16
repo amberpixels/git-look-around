@@ -190,11 +190,11 @@
                   <div
                     v-if="
                       repoCounts[item.entityId] &&
-                      (preferences.syncIssues || preferences.syncPullRequests)
+                      (preferences.importIssues || preferences.importPullRequests)
                     "
                     class="repo-counts-inline"
                   >
-                    <span v-if="preferences.syncPullRequests" class="count-badge-inline prs">
+                    <span v-if="preferences.importPullRequests" class="count-badge-inline prs">
                       <svg class="icon" viewBox="0 0 16 16" width="14" height="14">
                         <path
                           d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"
@@ -465,9 +465,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick, onUnmounted, watch, shallowRef } from 'vue';
 import { useRepos } from '@/src/composables/useRepos';
-import { useSyncStatus } from '@/src/composables/useSyncStatus';
+import { useImportStatus } from '@/src/composables/useImportStatus';
 import { useRateLimit } from '@/src/composables/useRateLimit';
-import { useSyncPreferences } from '@/src/composables/useSyncPreferences';
+import { useImportPreferences } from '@/src/composables/useImportPreferences';
 import { useBackgroundMessage } from '@/src/composables/useBackgroundMessage';
 import { useKeyboardShortcuts } from '@/src/composables/useKeyboardShortcuts';
 import { useSearchCache } from '@/src/composables/useSearchCache';
@@ -632,9 +632,9 @@ const {
   addRepoToIndex,
 } = useRepos();
 
-const { status: syncStatus } = useSyncStatus(500);
+const { status: syncStatus } = useImportStatus(500);
 const { rateLimit } = useRateLimit(0);
-const { preferences } = useSyncPreferences();
+const { preferences } = useImportPreferences();
 const { loadFirstResult, loadContributors } = useSearchCache();
 
 // Pass current username (reactive) for authorship-based sorting
@@ -713,10 +713,10 @@ async function loadAllPRsAndIssues() {
     indexedReposList.map(async (repo) => {
       try {
         const [issues, prs] = await Promise.all([
-          preferences.value.syncIssues
+          preferences.value.importIssues
             ? sendMessage<IssueRecord[]>(MessageType.GET_ISSUES_BY_REPO, repo.id)
             : Promise.resolve([]),
-          preferences.value.syncPullRequests
+          preferences.value.importPullRequests
             ? sendMessage<PullRequestRecord[]>(MessageType.GET_PRS_BY_REPO, repo.id)
             : Promise.resolve([]),
         ]);
@@ -814,11 +814,11 @@ const nonIndexedRepos = computed(() => {
 const searchPlaceholder = computed(() => {
   const parts = ['repositories'];
 
-  if (preferences.value.syncPullRequests) {
+  if (preferences.value.importPullRequests) {
     parts.push('pull requests');
   }
 
-  if (preferences.value.syncIssues) {
+  if (preferences.value.importIssues) {
     parts.push('issues');
   }
 
@@ -882,7 +882,7 @@ function applyQuickSwitcherLogic(results: SearchResultItem[]): SearchResultItem[
   const skeletons = results.filter((r) => r.type === 'skeleton');
   const realResults = results.filter((r) => r.type !== 'skeleton');
 
-  const showingPrsOrIssues = preferences.value.syncIssues || preferences.value.syncPullRequests;
+  const showingPrsOrIssues = preferences.value.importIssues || preferences.value.importPullRequests;
 
   // If not showing PRs/Issues, hide current repo completely
   if (!showingPrsOrIssues) {
@@ -1560,6 +1560,25 @@ async function updateTheme() {
   });
 }
 
+// Setup theme change listeners (declared at top level for cleanup)
+let mediaQuery: ReturnType<typeof window.matchMedia> | null = null;
+let handleThemeChange: (() => void) | null = null;
+let themeObserver: InstanceType<typeof window.MutationObserver> | null = null;
+
+// Register cleanup handler at top level (before any async operations)
+onUnmounted(() => {
+  if (mediaQuery && handleThemeChange) {
+    mediaQuery.removeEventListener('change', handleThemeChange);
+  }
+  if (themeObserver) {
+    themeObserver.disconnect();
+  }
+  // Clear debounce timeout
+  if (debounceTimeout) {
+    window.clearTimeout(debounceTimeout);
+  }
+});
+
 // Auto-load data when component mounts (content script loads)
 onMounted(async () => {
   // CRITICAL: Apply cached theme FIRST for instant rendering (no flash)
@@ -1589,25 +1608,15 @@ onMounted(async () => {
   await updateTheme();
 
   // Listen for OS-level theme changes
-  const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-  const handleThemeChange = () => updateTheme();
+  mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  handleThemeChange = () => updateTheme();
   mediaQuery.addEventListener('change', handleThemeChange);
 
   // Listen for GitHub theme changes (using MutationObserver)
-  const observer = new window.MutationObserver(() => updateTheme());
-  observer.observe(document.documentElement, {
+  themeObserver = new window.MutationObserver(() => updateTheme());
+  themeObserver.observe(document.documentElement, {
     attributes: true,
     attributeFilter: ['data-color-mode', 'data-dark-theme', 'class'],
-  });
-
-  // Cleanup
-  onUnmounted(() => {
-    mediaQuery.removeEventListener('change', handleThemeChange);
-    observer.disconnect();
-    // Clear debounce timeout
-    if (debounceTimeout) {
-      window.clearTimeout(debounceTimeout);
-    }
   });
 });
 

@@ -5,16 +5,16 @@
 
 const STORAGE_KEYS = {
   GITHUB_TOKEN: 'github_token',
-  SYNC_PREFERENCES: 'sync_preferences',
+  IMPORT_PREFERENCES: 'import_preferences',
   THEME_CACHE: 'theme_cache',
 } as const;
 
 /**
- * User preferences for what to sync
+ * User preferences for what to import
  */
-export interface SyncPreferences {
-  syncIssues: boolean;
-  syncPullRequests: boolean;
+export interface ImportPreferences {
+  importIssues: boolean;
+  importPullRequests: boolean;
   debugMode: boolean;
 }
 
@@ -51,26 +51,26 @@ export async function isAuthenticated(): Promise<boolean> {
 }
 
 /**
- * Get sync preferences (defaults: sync both issues and PRs)
+ * Get import preferences (defaults: import both issues and PRs)
  */
-export async function getSyncPreferences(): Promise<SyncPreferences> {
-  const result = await browser.storage.local.get(STORAGE_KEYS.SYNC_PREFERENCES);
-  const prefs = result[STORAGE_KEYS.SYNC_PREFERENCES] as SyncPreferences | undefined;
+export async function getImportPreferences(): Promise<ImportPreferences> {
+  const result = await browser.storage.local.get(STORAGE_KEYS.IMPORT_PREFERENCES);
+  const prefs = result[STORAGE_KEYS.IMPORT_PREFERENCES] as ImportPreferences | undefined;
 
-  // Default: sync both, debug mode off
+  // Default: import both, debug mode off
   return {
-    syncIssues: prefs?.syncIssues ?? true,
-    syncPullRequests: prefs?.syncPullRequests ?? true,
+    importIssues: prefs?.importIssues ?? true,
+    importPullRequests: prefs?.importPullRequests ?? true,
     debugMode: prefs?.debugMode ?? false,
   };
 }
 
 /**
- * Save sync preferences
+ * Save import preferences
  */
-export async function saveSyncPreferences(preferences: SyncPreferences): Promise<void> {
+export async function saveImportPreferences(preferences: ImportPreferences): Promise<void> {
   await browser.storage.local.set({
-    [STORAGE_KEYS.SYNC_PREFERENCES]: preferences,
+    [STORAGE_KEYS.IMPORT_PREFERENCES]: preferences,
   });
 }
 

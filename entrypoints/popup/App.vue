@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { isAuthenticated as checkAuth } from '@/src/storage/chrome';
-import { useSyncStatus } from '@/src/composables/useSyncStatus';
+import { useImportStatus } from '@/src/composables/useImportStatus';
 import { useRateLimit } from '@/src/composables/useRateLimit';
 
 const isAuthenticated = ref<boolean | null>(null);
@@ -9,7 +9,7 @@ const loading = ref(true);
 const isDarkTheme = ref(false);
 
 // Use composables for data fetching
-const { status: syncStatus } = useSyncStatus(5000); // Poll every 5 seconds
+const { status: syncStatus } = useImportStatus(5000); // Poll every 5 seconds
 const { rateLimit, getRateLimitStatus } = useRateLimit(5000);
 
 // Computed sync status text

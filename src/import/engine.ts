@@ -1,5 +1,5 @@
 /**
- * Sync Engine - Handles syncing data from GitHub to IndexedDB
+ * Import Engine - Handles importing data from GitHub to IndexedDB
  * Completely decoupled from UI - runs independently and saves in chunks
  */
 
@@ -22,21 +22,21 @@ import {
   getRepo,
 } from '@/src/storage/db';
 
-import { getSyncPreferences } from '@/src/storage/chrome';
-import { isUserContributor, getLastContributionDate } from '@/src/api/contributors';
+import { getImportPreferences } from '@/src/storage/chrome';
+import { isUserContributor, getLastContributionDate } from '@/src/api/github';
 import type { IssueRecord, PullRequestRecord } from '@/src/types';
 
 // Repos with last update older than 6 months are NOT indexed by default
 // (unless manually indexed or me_contributing is true)
 const INDEXED_ACTIVITY_THRESHOLD_MS = 6 * 30 * 24 * 60 * 60 * 1000; // ~6 months
 
-// Maximum number of "repos of interest" to index (to avoid excessive syncing)
+// Maximum number of "repos of interest" to index (to avoid excessive importing)
 const MAX_INDEXED_REPOS = 100;
 
 /**
- * Sync status stored in IndexedDB meta
+ * Import status stored in IndexedDB meta
  */
-export interface SyncStatus {
+export interface ImportStatus {
   isRunning: boolean;
   lastStartedAt: number | null;
   lastCompletedAt: number | null;
@@ -44,24 +44,24 @@ export interface SyncStatus {
   accountLogin: string | null; // GitHub username (e.g. "amberpixels")
   progress: {
     totalRepos: number; // Total repos
-    indexedRepos: number; // Number of indexed repos (actively synced)
+    indexedRepos: number; // Number of indexed repos (actively imported)
     nonIndexedRepos: number; // Number of non-indexed repos (skipped)
-    issuesProgress: number; // How many indexed repos have issues synced
-    prsProgress: number; // How many indexed repos have PRs synced
+    issuesProgress: number; // How many indexed repos have issues imported
+    prsProgress: number; // How many indexed repos have PRs imported
     currentRepo: string | null;
   };
 }
 
-const SYNC_STATUS_KEY = 'sync_status';
-const MIN_SYNC_INTERVAL_MS = 5 * 60 * 1000; // Don't sync more often than every 5 minutes
+const IMPORT_STATUS_KEY = 'import_status';
+const MIN_IMPORT_INTERVAL_MS = 3 * 60 * 1000; // Don't import more often than every 3 minutes
 
 /**
- * Get current sync status
+ * Get current import status
  */
-export async function getSyncStatus(): Promise<SyncStatus> {
-  const status = await getMeta(SYNC_STATUS_KEY);
+export async function getImportStatus(): Promise<ImportStatus> {
+  const status = await getMeta(IMPORT_STATUS_KEY);
   return (
-    (status as SyncStatus) || {
+    (status as ImportStatus) || {
       isRunning: false,
       lastStartedAt: null,
       lastCompletedAt: null,
@@ -80,53 +80,53 @@ export async function getSyncStatus(): Promise<SyncStatus> {
 }
 
 /**
- * Update sync status
+ * Update import status
  * Exported for use in background initialization to clear stuck states
  */
-export async function updateSyncStatus(updates: Partial<SyncStatus>): Promise<void> {
-  const current = await getSyncStatus();
+export async function updateImportStatus(updates: Partial<ImportStatus>): Promise<void> {
+  const current = await getImportStatus();
   const newStatus = { ...current, ...updates };
-  await setMeta(SYNC_STATUS_KEY, newStatus);
+  await setMeta(IMPORT_STATUS_KEY, newStatus);
 }
 
 /**
- * Check if we should run a sync (not running, enough time passed)
+ * Check if we should run a import (not running, enough time passed)
  */
-export async function shouldRunSync(): Promise<boolean> {
-  const status = await getSyncStatus();
+export async function shouldRunImport(): Promise<boolean> {
+  const status = await getImportStatus();
 
-  // Check if sync is stuck (running for more than 30 minutes)
+  // Check if import is stuck (running for more than 30 minutes)
   const STUCK_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
   if (status.isRunning && status.lastStartedAt) {
     const runningSince = Date.now() - status.lastStartedAt;
     if (runningSince > STUCK_TIMEOUT_MS) {
       console.warn(
-        `[Sync] Sync appears stuck (running for ${Math.round(runningSince / 1000 / 60)}min), forcing reset...`,
+        `[Import] Import appears stuck (running for ${Math.round(runningSince / 1000 / 60)}min), forcing reset...`,
       );
-      // Force reset the stuck sync
-      await updateSyncStatus({
+      // Force reset the stuck import
+      await updateImportStatus({
         isRunning: false,
-        lastError: 'Sync timeout - automatically reset',
+        lastError: 'Import timeout - automatically reset',
       });
     } else {
-      console.warn('[Sync] Already running, skipping...');
+      console.warn('[Import] Already running, skipping...');
       return false;
     }
   } else if (status.isRunning) {
     // isRunning but no lastStartedAt? Something is wrong, reset it
-    console.warn('[Sync] Inconsistent state detected (running but no start time), resetting...');
-    await updateSyncStatus({
+    console.warn('[Import] Inconsistent state detected (running but no start time), resetting...');
+    await updateImportStatus({
       isRunning: false,
       lastError: 'Inconsistent state - automatically reset',
     });
   }
 
-  // Check if enough time has passed since last sync
+  // Check if enough time has passed since last import
   if (status.lastCompletedAt) {
     const timeSinceLastSync = Date.now() - status.lastCompletedAt;
-    if (timeSinceLastSync < MIN_SYNC_INTERVAL_MS) {
+    if (timeSinceLastSync < MIN_IMPORT_INTERVAL_MS) {
       console.warn(
-        `[Sync] Last sync was ${Math.round(timeSinceLastSync / 1000)}s ago, skipping...`,
+        `[Import]Last import was ${Math.round(timeSinceLastSync / 1000)}s ago, skipping...`,
       );
       return false;
     }
@@ -136,7 +136,7 @@ export async function shouldRunSync(): Promise<boolean> {
 }
 
 /**
- * Determine if repo is a "repo of interest" (should be indexed/synced with issues/PRs)
+ * Determine if repo is a "repo of interest" (should be indexed/imported with issues/PRs)
  *
  * A repo is "of interest" if:
  * 1. Manually indexed (indexed_manually = true) - always included
@@ -144,7 +144,7 @@ export async function shouldRunSync(): Promise<boolean> {
  * 3. You're a contributor (me_contributing = true) - even if old/inactive
  * 4. Has recent activity (pushed within last 6 months)
  *
- * Note: We'll apply a limit of MAX_INDEXED_REPOS to avoid excessive syncing
+ * Note: We'll apply a limit of MAX_INDEXED_REPOS to avoid excessive importing
  */
 function isRepoOfInterest(repo: {
   pushed_at: string | null;
@@ -182,35 +182,36 @@ function isRepoOfInterest(repo: {
     }
   }
 
+  console.info('Skipping ');
   // Default: not of interest
   return false;
 }
 
 /**
- * Main sync function - syncs all data from GitHub to IndexedDB
+ * Main import function - imports all data from GitHub to IndexedDB
  * Saves data in chunks as it fetches, so UI can display partial results
  */
-export async function runSync(): Promise<void> {
-  const canRun = await shouldRunSync();
+export async function runImport(): Promise<void> {
+  const canRun = await shouldRunImport();
   if (!canRun) {
-    console.warn('[Sync] Skipping sync - shouldRunSync returned false');
+    console.warn('[Import] Skipping import - shouldRunImport returned false');
     return;
   }
 
-  console.warn('[Sync] Starting sync...');
+  console.warn('[Import] Starting import...');
 
   try {
-    // Step 0: Get sync preferences and user info
-    const preferences = await getSyncPreferences();
+    // Step 0: Get import preferences and user info
+    const preferences = await getImportPreferences();
     const user = await getAuthenticatedUser();
     const accountLogin = user.login || null;
-    console.warn(`[Sync] Syncing account: ${accountLogin}`);
+    console.warn(`[Import] Importing account: ${accountLogin}`);
     console.warn(
-      `[Sync] Preferences: Issues=${preferences.syncIssues}, PRs=${preferences.syncPullRequests}`,
+      `[Import]Preferences: Issues=${preferences.importIssues}, PRs=${preferences.importPullRequests}`,
     );
 
-    // Mark sync as running
-    await updateSyncStatus({
+    // Mark import as running
+    await updateImportStatus({
       isRunning: true,
       lastStartedAt: Date.now(),
       lastError: null,
@@ -226,17 +227,17 @@ export async function runSync(): Promise<void> {
     });
 
     // Step 1: Fetch all repos (user + organizations) and count them
-    console.warn('[Sync] Fetching repositories (user + organizations)...');
+    console.warn('[Import] Fetching repositories (user + organizations)...');
     const { repos: allRepos, personalForkParentRepoIds } = await getAllAccessibleRepos(
       accountLogin || undefined,
     );
     const forkParentRepoIds = new Set(personalForkParentRepoIds);
     console.warn(
-      `[Sync] Found ${allRepos.length} total repositories (${forkParentRepoIds.size} upstream(s) of your forks)`,
+      `[Import] Found ${allRepos.length} total repositories (${forkParentRepoIds.size} upstream(s) of your forks)`,
     );
 
     // Check contributor status and determine "repos of interest"
-    console.warn('[Sync] Checking contributor status and repos of interest...');
+    console.warn('[Import] Checking contributor status and repos of interest...');
     const repoRecords = await Promise.all(
       allRepos.map(async (repo) => {
         const [owner, repoName] = repo.full_name.split('/');
@@ -251,7 +252,7 @@ export async function runSync(): Promise<void> {
             lastContributedAt = await getLastContributionDate(owner, repoName, accountLogin);
           }
         } catch (err) {
-          console.warn(`[Sync] Could not check contributor status for ${repo.full_name}:`, err);
+          console.warn(`[Import]Could not check contributor status for ${repo.full_name}:`, err);
         }
 
         // Get existing repo to preserve indexed_manually flag AND visit tracking
@@ -328,18 +329,18 @@ export async function runSync(): Promise<void> {
     const nonIndexedRepos = finalRepoRecords.filter((repo) => !repo.indexed);
 
     console.warn(
-      `[Sync] ✓ Saved ${allRepos.length} repos to DB (${repoRecords.filter((r) => r.me_contributing).length} where you contribute)`,
+      `[Import] ✓ Saved ${allRepos.length} repos to DB (${repoRecords.filter((r) => r.me_contributing).length} where you contribute)`,
     );
     console.warn(
-      `[Sync] ✓ Selected ${indexedRepos.length}/${reposOfInterest.length} repos of interest for indexing (limit: ${MAX_INDEXED_REPOS})`,
+      `[Import]✓ Selected ${indexedRepos.length}/${reposOfInterest.length} repos of interest for indexing (limit: ${MAX_INDEXED_REPOS})`,
     );
 
     console.warn(
-      `[Sync] Indexed repos: ${indexedRepos.length}, Non-indexed repos: ${nonIndexedRepos.length} (skipping sync)`,
+      `[Import] Indexed repos: ${indexedRepos.length}, Non-indexed repos: ${nonIndexedRepos.length} (skipping import)`,
     );
 
     // Update progress with repo counts
-    await updateSyncStatus({
+    await updateImportStatus({
       accountLogin,
       progress: {
         totalRepos: allRepos.length,
@@ -352,16 +353,16 @@ export async function runSync(): Promise<void> {
     });
 
     // Step 2: Fetch issues and PRs for indexed repos only (based on preferences)
-    const syncTargets = [];
-    if (preferences.syncIssues) syncTargets.push('issues');
-    if (preferences.syncPullRequests) syncTargets.push('PRs');
+    const importTargets = [];
+    if (preferences.importIssues) importTargets.push('issues');
+    if (preferences.importPullRequests) importTargets.push('PRs');
 
-    if (syncTargets.length > 0) {
+    if (importTargets.length > 0) {
       console.warn(
-        `[Sync] Syncing ${syncTargets.join(' and ')} for ${indexedRepos.length} indexed repos...`,
+        `[Import]Syncing ${importTargets.join(' and ')} for ${indexedRepos.length} indexed repos...`,
       );
     } else {
-      console.warn('[Sync] Skipping issues and PRs (disabled in preferences)');
+      console.warn('[Import] Skipping issues and PRs (disabled in preferences)');
     }
 
     let issuesCount = 0;
@@ -372,7 +373,7 @@ export async function runSync(): Promise<void> {
         const [owner, repoName] = repo.full_name.split('/');
 
         // Update current repo in progress
-        await updateSyncStatus({
+        await updateImportStatus({
           progress: {
             totalRepos: allRepos.length,
             indexedRepos: indexedRepos.length,
@@ -384,7 +385,7 @@ export async function runSync(): Promise<void> {
         });
 
         console.warn(
-          `[Sync] [${Math.max(issuesCount, prsCount) + 1}/${indexedRepos.length}] Processing ${repo.full_name}...`,
+          `[Import] [${Math.max(issuesCount, prsCount) + 1}/${indexedRepos.length}] Processing ${repo.full_name}...`,
         );
 
         // Build promises array based on preferences
@@ -392,7 +393,7 @@ export async function runSync(): Promise<void> {
         const shouldLimitToMyPRs = !!(repo.prs_only_my_involvement && accountLogin);
 
         // Fetch issues if enabled
-        if (preferences.syncIssues) {
+        if (preferences.importIssues) {
           promises.push(
             getRepoIssues(owner, repoName, 'all')
               .then(async (issues) => {
@@ -415,9 +416,9 @@ export async function runSync(): Promise<void> {
                 });
                 return saveIssues(issueRecords).then(() => {
                   issuesCount++;
-                  console.warn(`[Sync] ✓ ${repo.full_name}: ${issues.length} issues`);
+                  console.warn(`[Import] ✓ ${repo.full_name}: ${issues.length} issues`);
                   // Update progress after issues saved
-                  updateSyncStatus({
+                  updateImportStatus({
                     progress: {
                       totalRepos: allRepos.length,
                       indexedRepos: indexedRepos.length,
@@ -431,18 +432,18 @@ export async function runSync(): Promise<void> {
                 });
               })
               .catch((err) => {
-                console.error(`[Sync] ✗ Failed to fetch issues for ${repo.full_name}:`, err);
+                console.error(`[Import]✗ Failed to fetch issues for ${repo.full_name}:`, err);
                 issuesCount++; // Still increment to keep progress moving
                 return 0;
               }),
           );
         } else {
-          // If not syncing issues, increment count to match indexedRepos
+          // If not importing issues, increment count to match indexedRepos
           issuesCount++;
         }
 
         // Fetch PRs if enabled
-        if (preferences.syncPullRequests) {
+        if (preferences.importPullRequests) {
           promises.push(
             (shouldLimitToMyPRs
               ? getUserInvolvedPullRequests(owner, repoName, accountLogin!)
@@ -469,9 +470,9 @@ export async function runSync(): Promise<void> {
                 });
                 return savePullRequests(prRecords).then(() => {
                   prsCount++;
-                  console.warn(`[Sync] ✓ ${repo.full_name}: ${prs.length} PRs`);
+                  console.warn(`[Import] ✓ ${repo.full_name}: ${prs.length} PRs`);
                   // Update progress after PRs saved
-                  updateSyncStatus({
+                  updateImportStatus({
                     progress: {
                       totalRepos: allRepos.length,
                       indexedRepos: indexedRepos.length,
@@ -485,13 +486,13 @@ export async function runSync(): Promise<void> {
                 });
               })
               .catch((err) => {
-                console.error(`[Sync] ✗ Failed to fetch PRs for ${repo.full_name}:`, err);
+                console.error(`[Import]✗ Failed to fetch PRs for ${repo.full_name}:`, err);
                 prsCount++; // Still increment to keep progress moving
                 return 0;
               }),
           );
         } else {
-          // If not syncing PRs, increment count to match indexedRepos
+          // If not importing PRs, increment count to match indexedRepos
           prsCount++;
         }
 
@@ -499,15 +500,15 @@ export async function runSync(): Promise<void> {
         await Promise.all(promises);
       } catch (err) {
         // This should rarely be reached now, but keep as safety net
-        console.error(`[Sync] ✗ Unexpected error for ${repo.full_name}:`, err);
+        console.error(`[Import] ✗ Unexpected error for ${repo.full_name}:`, err);
         // Ensure counters are incremented so we don't get stuck
         if (issuesCount < indexedRepos.length) issuesCount++;
         if (prsCount < indexedRepos.length) prsCount++;
       }
     }
 
-    // Mark sync as completed successfully
-    await updateSyncStatus({
+    // Mark import as completed successfully
+    await updateImportStatus({
       isRunning: false,
       lastCompletedAt: Date.now(),
       lastError: null,
@@ -523,14 +524,14 @@ export async function runSync(): Promise<void> {
     });
 
     console.warn(
-      `[Sync] ✓ Sync completed: ${indexedRepos.length} indexed repos, ${nonIndexedRepos.length} non-indexed (skipped)`,
+      `[Import]✓ Import completed: ${indexedRepos.length} indexed repos, ${nonIndexedRepos.length} non-indexed (skipped)`,
     );
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[Sync] ✗ Sync failed:', errorMessage);
+    console.error('[Import] ✗ Import failed:', errorMessage);
 
-    // Mark sync as failed
-    await updateSyncStatus({
+    // Mark import as failed
+    await updateImportStatus({
       isRunning: false,
       lastError: errorMessage,
     });
@@ -540,28 +541,28 @@ export async function runSync(): Promise<void> {
 }
 
 /**
- * Force a sync even if one recently completed
+ * Force an import even if one recently completed
  */
-export async function forceSync(): Promise<void> {
-  console.warn('[Sync] Force sync requested');
+export async function forceImport(): Promise<void> {
+  console.warn('[Import] Force import requested');
 
-  // Reset the sync state completely to allow immediate sync
-  await updateSyncStatus({
+  // Reset the import state completely to allow immediate import
+  await updateImportStatus({
     isRunning: false,
     lastCompletedAt: null,
     lastError: null,
   });
 
-  return runSync();
+  return runImport();
 }
 
 /**
- * Reset stuck sync (for manual recovery)
+ * Reset stuck import (for manual recovery)
  */
-export async function resetSync(): Promise<void> {
-  console.warn('[Sync] Manual sync reset requested');
+export async function resetImport(): Promise<void> {
+  console.warn('[Import] Manual import reset requested');
 
-  await updateSyncStatus({
+  await updateImportStatus({
     isRunning: false,
     lastError: 'Manually reset by user',
     progress: {
@@ -605,13 +606,13 @@ async function runQuickCheckOnce(): Promise<void> {
   );
 
   try {
-    const preferences = await getSyncPreferences();
-    const status = await getSyncStatus();
+    const preferences = await getImportPreferences();
+    const status = await getImportStatus();
     const accountLogin = status.accountLogin || undefined;
 
-    // Skip if PRs sync is disabled (we only check PRs in quick-check now)
-    if (!preferences.syncPullRequests) {
-      console.warn('[QuickCheck] Skipped - PR sync disabled in preferences');
+    // Skip if PRs import is disabled (we only check PRs in quick-check now)
+    if (!preferences.importPullRequests) {
+      console.warn('[QuickCheck] Skipped - PR import disabled in preferences');
       return;
     }
 
@@ -622,7 +623,7 @@ async function runQuickCheckOnce(): Promise<void> {
     for (const apiRepo of recentRepos) {
       const storedRepo = await getRepo(apiRepo.id);
 
-      // Skip if repo doesn't exist in our DB yet (will be picked up by full sync)
+      // Skip if repo doesn't exist in our DB yet (will be picked up by full import)
       if (!storedRepo) {
         continue;
       }
@@ -662,7 +663,7 @@ async function runQuickCheckOnce(): Promise<void> {
           );
         }
         console.warn(
-          `[QuickCheck] Detected ${updatedPRs.length} updated PR(s) in ${apiRepo.full_name}, re-syncing...`,
+          `[QuickCheck] Detected ${updatedPRs.length} updated PR(s) in ${apiRepo.full_name}, re-importing...`,
         );
 
         // Update repo record (preserve visit tracking)
@@ -683,7 +684,7 @@ async function runQuickCheckOnce(): Promise<void> {
           },
         ]);
 
-        // Re-sync all PRs for this repo
+        // Re-import all PRs for this repo
         try {
           const allPRs = shouldLimitToMyPRs
             ? recentPRs
@@ -708,9 +709,9 @@ async function runQuickCheckOnce(): Promise<void> {
             };
           });
           await savePullRequests(prRecords);
-          console.warn(`[QuickCheck] ✓ Re-synced ${allPRs.length} PRs for ${apiRepo.full_name}`);
+          console.warn(`[QuickCheck] ✓ Re-imported ${allPRs.length} PRs for ${apiRepo.full_name}`);
         } catch (err) {
-          console.error(`[QuickCheck] ✗ Failed to re-sync PRs for ${apiRepo.full_name}:`, err);
+          console.error(`[QuickCheck] ✗ Failed to re-import PRs for ${apiRepo.full_name}:`, err);
         }
       }
     }

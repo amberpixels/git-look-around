@@ -50,7 +50,7 @@
       <div class="preferences">
         <label class="checkbox-label">
           <input
-            v-model="preferences.syncIssues"
+            v-model="preferences.importIssues"
             type="checkbox"
             class="checkbox"
             @change="savePreferences"
@@ -60,12 +60,12 @@
 
         <label class="checkbox-label">
           <input
-            v-model="preferences.syncPullRequests"
+            v-model="preferences.importPullRequests"
             type="checkbox"
             class="checkbox"
             @change="savePreferences"
           />
-          <span>Sync Pull Requests</span>
+          <span>Import Pull Requests</span>
         </label>
 
         <label class="checkbox-label">
@@ -90,17 +90,17 @@ import {
   saveGitHubToken,
   getGitHubToken,
   removeGitHubToken,
-  getSyncPreferences,
-  saveSyncPreferences,
-  type SyncPreferences,
+  getImportPreferences,
+  saveImportPreferences,
+  type ImportPreferences,
 } from '@/src/storage/chrome';
 
 const tokenInput = ref('');
 const isAuthenticated = ref(false);
 const error = ref('');
-const preferences = ref<SyncPreferences>({
-  syncIssues: true,
-  syncPullRequests: true,
+const preferences = ref<ImportPreferences>({
+  importIssues: true,
+  importPullRequests: true,
   debugMode: false,
 });
 const preferencesSaved = ref(false);
@@ -110,7 +110,7 @@ onMounted(async () => {
   isAuthenticated.value = !!token;
 
   // Load preferences
-  preferences.value = await getSyncPreferences();
+  preferences.value = await getImportPreferences();
 });
 
 async function saveToken() {
@@ -136,7 +136,7 @@ async function logout() {
 }
 
 async function savePreferences() {
-  await saveSyncPreferences(preferences.value);
+  await saveImportPreferences(preferences.value);
   preferencesSaved.value = true;
 
   // Hide success message after 2 seconds

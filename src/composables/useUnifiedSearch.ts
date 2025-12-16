@@ -49,7 +49,7 @@ const TWO_MONTHS_MS = 2 * 30 * 24 * 60 * 60 * 1000;
 /**
  * Extract prefix from a repo name (everything before first hyphen)
  * Examples:
- *   "mycompany/mc-acme" -> "my-"
+ *   "mycompany/mc-acme" -> "mc-"
  *   "myorg/pr-backend" -> "pr-"
  *   "github/no-prefix" -> null
  */
@@ -77,7 +77,7 @@ async function analyzeDominantOrgs(repos: RepoRecord[]): Promise<string[]> {
 
   // Count repos per organization
   for (const repo of repos) {
-    const org = repo.full_name.split('/')[0]; // Get "mycompany" from "mycompany/mc-acme"
+    const org = repo.full_name.split('/')[0]; // Get "my-company" from "my-company/mc-acme"
     if (org) {
       orgCounts.set(org, (orgCounts.get(org) || 0) + 1);
     }
@@ -151,7 +151,7 @@ async function analyzeCommonPrefixes(repos: RepoRecord[]): Promise<string[]> {
  * Scoring priority:
  * 1. Exact match: 1000
  * 2. Common prefix + query: 950 (e.g., "my-foobar" when searching "foobar" and "my-" is common)
- * 3. Starts with query: 800 (e.g., "foobar-app")
+ * 3. Starts with query: 800 (e.g., "foobar-app" when searching "foobar")
  * 4. Word/segment ends with query: 600 (e.g., "my-foobar" when searching "foobar", no common prefix)
  * 5. Word boundary at start: 500 (e.g., " foobar" or "-foobar")
  * 6. Word boundary anywhere: 400
@@ -161,7 +161,7 @@ async function analyzeCommonPrefixes(repos: RepoRecord[]): Promise<string[]> {
  * Special rule: Single-character queries (1 char) only match:
  * - Starts with (prefix)
  * - After word boundaries (-, /, _, ., space)
- * This prevents matching "router" when searching "u"
+ * This prevents matching "foobar" when searching "o"
  */
 function calculateMatchScore(text: string, query: string, commonPrefixes: string[] = []): number {
   const lowerText = text.toLowerCase();
@@ -282,7 +282,7 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
       );
 
       // If org is dominant (>=80% of repos), ignore it and only match on repo name
-      // This ensures "router" matches "mycompany/router" with exact match score
+      // This ensures "foobar" matches "mycompany/foobar" with exact match score
       if (isDominantOrg) {
         repoNameForMatching = repo.full_name.split('/').pop() || repo.full_name;
       }

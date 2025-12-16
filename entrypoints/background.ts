@@ -1,14 +1,14 @@
 import { MessageType } from '@/src/messages/types';
 import type { ExtensionMessage } from '@/src/messages/types';
 import {
-  runSync,
-  getSyncStatus,
-  updateSyncStatus,
-  forceSync,
+  runImport,
+  getImportStatus,
+  updateImportStatus,
+  forceImport,
   startQuickCheckLoop,
   setQuickCheckBrowsingMode,
   setQuickCheckIdleMode,
-} from '@/src/sync/engine';
+} from '@/src/import/engine';
 import { getLastRateLimit } from '@/src/api/github';
 import {
   getAllRepos,
@@ -119,10 +119,10 @@ export default defineBackground(() => {
   // Initialize sync system
   (async () => {
     // Clear any stuck sync state from previous session (e.g., hot-reload, extension restart)
-    const status = await getSyncStatus();
+    const status = await getImportStatus();
     if (status.isRunning) {
       console.warn('[Background] Clearing stuck sync state from previous session...');
-      await updateSyncStatus({
+      await updateImportStatus({
         isRunning: false,
         lastError: 'Extension reloaded - sync state reset',
       });
@@ -131,7 +131,7 @@ export default defineBackground(() => {
     // Run initial sync
     console.warn('[Background] Starting initial sync...');
     try {
-      await runSync();
+      await runImport();
       console.warn('[Background] Initial sync completed, starting quick-check loop...');
       startQuickCheckLoop();
     } catch (err) {
@@ -161,8 +161,8 @@ export default defineBackground(() => {
     (async () => {
       try {
         switch (message.type) {
-          case MessageType.GET_SYNC_STATUS: {
-            const status = await getSyncStatus();
+          case MessageType.GET_IMPORT_STATUS: {
+            const status = await getImportStatus();
             sendResponse({ success: true, data: status });
             break;
           }
@@ -193,8 +193,8 @@ export default defineBackground(() => {
             break;
           }
 
-          case MessageType.FORCE_SYNC: {
-            await forceSync();
+          case MessageType.FORCE_IMPORT: {
+            await forceImport();
             sendResponse({ success: true });
             break;
           }
