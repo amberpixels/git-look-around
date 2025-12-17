@@ -2,32 +2,38 @@
 
 > Lightning-fast command palette for GitHub repos, PRs, and issues.
 
-A Chrome/Firefox extension that drops a command palette on any GitHub repo, PR, or issue so you can jump without breaking flow. Built with Vue 3 + WXT; Firefox build is work in progress (packaging TBD).
+A Chrome/Firefox extension that adds a command palette to GitHub so you can jump to repos, pull requests, and issues without losing your flow. It syncs your GitHub data in the background, shows rate-limit awareness, and stays out of the way until you hit the shortcut.
 
 ## What it does
-- Toggle the overlay from any GitHub page: `Cmd+Shift+K` (macOS) / `Ctrl+Shift+K` (Linux/Windows).
-- Fuzzy search across repos, PRs, and issues with ghost-text hints for the top hit.
-- Filter to your contributions or visited items; per-repo badges show PR/issue counts at a glance.
-- Popup shows sync status and rate limits, with quick options to reload or open settings.
-
-## Why this palette?
-- Lighter and more focused than GitHub’s feature-preview palette—built for fast navigation.
-- Reactive results: new repos/PRs/issues appear as soon as sync finishes; no GitHub reload needed.
-- Quick hop back to recent places (visited filter), inspired by fast switchers in modern IDEs.
-
-## Download & links
-- Chrome Web Store: coming soon (placeholder).
-- Firefox Add-ons: work in progress (built with WXT, packaging TBD).
-- Landing page: https://eugene.md/git-look-around
-- Keyboard shortcuts: `chrome://extensions/shortcuts` to remap the toggle command.
-- Questions or support? Open an issue in this repo.
+- Toggle the overlay with `Cmd+Shift+K` (macOS) or `Ctrl+Shift+K` (Linux/Windows) from any GitHub page.
+- Fuzzy search across repos, PRs, and issues with a single input and ghost-text suggestions for the top hit.
+- Filter to just your contributions or items you have visited; per-repo badges show PR/issue counts at a glance.
+- Popup panel shows sync status, rate limits, and lets you reload or jump to options.
 
 ## Demo
-- GIF/video demo coming soon.
+Demo GIF placeholder (will be added after recording the command palette in action).
+
+## Why this palette?
+- GitHub’s feature-preview Command Palette is heavier and broader; Git Look Around stays lightweight and focused on fast search + navigation.
+- Everything is reactive: as soon as sync finishes, repo/PR/issue results update without reloading GitHub.
+- Quick hop back to recent places (visited filter), inspired by the fast-switcher experience in modern IDEs.
+
+## Download & Links
+- Chrome Web Store: coming soon (link placeholder).
+- Firefox Add-ons: work in progress (built with WXT, packaging TBD).
+- Landing page: https://amberpixels.io/git-look-around
+- Source & updates: https://github.com/amberpixels/git-look-around
+- Keyboard shortcuts: `chrome://extensions/shortcuts` lets you remap the toggle command if you prefer a different combo.
+- Questions or support? Open an issue on GitHub.
 
 ## Coming soon
 - Firefox build: tested, release packaging in progress.
 - VIM mode: modal hotkeys for faster keyboard-only navigation.
+
+## Under the hood
+- Built with Vue 3 + WXT; background workers index your GitHub repos, pull requests, and issues for fast local filtering.
+- Content script mounts the command palette UI directly on GitHub; the popup detects the current repo and lets you force a sync if needed.
+- Icons and branding come from the extension bundle; keep assets under `/git-look-around/` when updating this page.
 
 ## Development
 - Requirements: Node 18.17+ (or 20+), pnpm 9+.
