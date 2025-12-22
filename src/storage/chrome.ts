@@ -9,6 +9,7 @@ const STORAGE_KEYS = {
   THEME_CACHE: 'theme_cache',
   HOTKEY_PREFERENCES: 'hotkey_preferences',
   DEBUG_MODE: 'debug_mode',
+  ORG_FILTER_PREFERENCES: 'org_filter_preferences',
 } as const;
 
 /**
@@ -27,6 +28,15 @@ export type HotkeyMode = 'github-only' | 'custom-hosts';
 export interface HotkeyPreferences {
   mode: HotkeyMode;
   customHosts: string[]; // List of custom host patterns like "example.com", "*.mycompany.com"
+}
+
+/**
+ * Organization filter preferences
+ * Maps organization name to enabled status
+ * Special key "__personal__" represents non-organization (personal) repos
+ */
+export interface OrgFilterPreferences {
+  enabledOrgs: Record<string, boolean>; // { "my-company": true, "other-org": false, "__personal__": true }
 }
 
 /**
@@ -139,6 +149,29 @@ export async function getDebugMode(): Promise<boolean> {
 export async function saveDebugMode(enabled: boolean): Promise<void> {
   await browser.storage.local.set({
     [STORAGE_KEYS.DEBUG_MODE]: enabled,
+  });
+}
+
+/**
+ * Get organization filter preferences
+ * Default: all organizations enabled
+ */
+export async function getOrgFilterPreferences(): Promise<OrgFilterPreferences> {
+  const result = await browser.storage.local.get(STORAGE_KEYS.ORG_FILTER_PREFERENCES);
+  const prefs = result[STORAGE_KEYS.ORG_FILTER_PREFERENCES] as OrgFilterPreferences | undefined;
+
+  // Default: empty (all orgs enabled)
+  return {
+    enabledOrgs: prefs?.enabledOrgs ?? {},
+  };
+}
+
+/**
+ * Save organization filter preferences
+ */
+export async function saveOrgFilterPreferences(preferences: OrgFilterPreferences): Promise<void> {
+  await browser.storage.local.set({
+    [STORAGE_KEYS.ORG_FILTER_PREFERENCES]: preferences,
   });
 }
 
