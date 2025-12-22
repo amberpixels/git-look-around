@@ -295,16 +295,33 @@ export async function runImport(): Promise<void> {
     // Get repos of interest (candidates for indexing)
     const reposOfInterest = repoRecords.filter((repo) => repo.indexed);
 
-    // Apply limit: take top MAX_INDEXED_REPOS (prioritize manually indexed, then contributing, then recent)
+    // Apply limit: take top MAX_INDEXED_REPOS
+    // Sort by: Personal repos → Own organizations → External organizations
+    // Within each category: manually indexed → contributing → recent activity
     const indexedRepos = reposOfInterest
       .sort((a, b) => {
+        // Helper function to get organization category
+        const getOrgCategory = (repo: typeof a): number => {
+          const owner = repo.full_name.split('/')[0];
+          // Personal repos (owner === current user): priority 0
+          if (accountLogin && owner === accountLogin) return 0;
+          // Own orgs (NOT fork parents): priority 1
+          if (!repo.is_parent_of_my_fork) return 1;
+          // External orgs (fork parents only): priority 2
+          return 2;
+        };
+
+        const categoryA = getOrgCategory(a);
+        const categoryB = getOrgCategory(b);
+
+        // Sort by category first (personal → own orgs → external orgs)
+        if (categoryA !== categoryB) return categoryA - categoryB;
+
+        // Within same category, apply existing priority logic:
+
         // Manually indexed first
         if (a.indexed_manually && !b.indexed_manually) return -1;
         if (!a.indexed_manually && b.indexed_manually) return 1;
-
-        // Upstream parents of my forks next
-        if (a.is_parent_of_my_fork && !b.is_parent_of_my_fork) return -1;
-        if (!a.is_parent_of_my_fork && b.is_parent_of_my_fork) return 1;
 
         // Contributing repos second
         if (a.me_contributing && !b.me_contributing) return -1;
@@ -606,6 +623,15 @@ async function runQuickCheckOnce(): Promise<void> {
   );
 
   try {
+    // Check if token exists before attempting any API calls
+    const { getGitHubToken } = await import('@/src/storage/chrome');
+    const token = await getGitHubToken();
+
+    if (!token) {
+      console.warn('[QuickCheck] Skipped - no GitHub token configured yet');
+      return;
+    }
+
     const preferences = await getImportPreferences();
     const status = await getImportStatus();
     const accountLogin = status.accountLogin || undefined;
