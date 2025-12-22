@@ -448,6 +448,7 @@
         <div class="status-indicator">
           <span class="status-dot" :class="syncStateClass" :title="syncStateTooltip"></span>
           <span class="status-text">
+            <GitHubIcon v-if="syncStatus?.accountLogin" :size="14" />
             {{ syncStateText }}
             <span v-if="syncCurrentRepo" class="syncing-repo">{{ syncCurrentRepo }}...</span>
           </span>
@@ -473,6 +474,7 @@ import { useBackgroundMessage } from '@/src/composables/useBackgroundMessage';
 import { useKeyboardShortcuts } from '@/src/composables/useKeyboardShortcuts';
 import { useSearchCache } from '@/src/composables/useSearchCache';
 import type { SearchResultItem } from '@/src/composables/useUnifiedSearch';
+import GitHubIcon from '@/src/components/GitHubIcon.vue';
 import { MessageType } from '@/src/messages/types';
 import type { RepoRecord, IssueRecord, PullRequestRecord } from '@/src/types';
 import { getCachedTheme, setCachedTheme, type ThemeMode } from '@/src/storage/chrome';
@@ -2385,6 +2387,9 @@ defineExpose({
   text-overflow: ellipsis;
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .syncing-repo {

@@ -4,6 +4,7 @@ import { isAuthenticated as checkAuth, getDebugMode } from '@/src/storage/chrome
 import { useImportStatus } from '@/src/composables/useImportStatus';
 import { useRateLimit } from '@/src/composables/useRateLimit';
 import { MessageType } from '@/src/messages/types';
+import GitHubIcon from '@/src/components/GitHubIcon.vue';
 
 const isAuthenticated = ref<boolean | null>(null);
 const loading = ref(true);
@@ -254,6 +255,7 @@ function getTimeAgo(timestamp: number): string {
         <div class="info-label">Sync Status</div>
         <div v-if="syncStatus" class="sync-details">
           <div class="account-status">
+            <GitHubIcon v-if="syncStatus.accountLogin" :size="14" />
             <span v-if="syncStatus.accountLogin">@{{ syncStatus.accountLogin }}</span>
             <span v-else>Account</span>
             <span class="check-mark">✓</span>
