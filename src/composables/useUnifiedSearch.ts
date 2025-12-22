@@ -232,6 +232,7 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
   const allEntities = ref<SearchableEntity[]>([]);
   const commonPrefixes = ref<string[]>([]);
   const dominantOrgs = ref<string[]>([]); // Organizations that represent ≥80% of repos
+  const orgFilterPreferences = ref<Record<string, boolean>>({}); // Organization filter preferences
 
   // Support both ref and plain string
   const username = computed(() => {
@@ -260,6 +261,29 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
   }
 
   /**
+   * Check if a repo should be included based on org filter preferences
+   */
+  function shouldIncludeRepo(repoFullName: string): boolean {
+    const parts = repoFullName.split('/');
+    if (parts.length < 2) return true; // Safety: include if we can't parse
+
+    const [org] = parts;
+
+    // If no filter preferences set, include everything (default)
+    if (Object.keys(orgFilterPreferences.value).length === 0) {
+      return true;
+    }
+
+    // If org is not in preferences, include it (default to enabled)
+    if (!(org in orgFilterPreferences.value)) {
+      return true;
+    }
+
+    // Return the preference value
+    return orgFilterPreferences.value[org] === true;
+  }
+
+  /**
    * Build a flat list of all searchable items
    */
   function buildSearchResults(query: string = ''): SearchResultItem[] {
@@ -272,6 +296,11 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
 
     for (const entity of allEntities.value) {
       const { repo, issues, prs } = entity;
+
+      // Filter by organization preferences
+      if (!shouldIncludeRepo(repo.full_name)) {
+        continue; // Skip this entire entity (repo, issues, PRs)
+      }
 
       // Calculate repo match score
       // Check if we should ignore org name for matching
@@ -516,6 +545,11 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
     const repos = entities.map((e) => e.repo);
     commonPrefixes.value = await analyzeCommonPrefixes(repos);
     dominantOrgs.value = await analyzeDominantOrgs(repos);
+
+    // Load organization filter preferences
+    const { getOrgFilterPreferences } = await import('@/src/storage/chrome');
+    const prefs = await getOrgFilterPreferences();
+    orgFilterPreferences.value = prefs.enabledOrgs;
   }
 
   return {

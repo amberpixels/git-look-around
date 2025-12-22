@@ -94,6 +94,76 @@
       <p v-if="preferencesSaved" class="success small">✓ Preferences saved</p>
     </div>
 
+    <div
+      v-if="
+        isAuthenticated &&
+        (availableOrgs.ownOrgs.length > 0 || availableOrgs.externalOrgs.length > 0)
+      "
+      class="section"
+    >
+      <h2>Organization Filters</h2>
+      <p class="instructions">
+        Choose which organizations to include in search results. Unchecked organizations will be
+        excluded.
+      </p>
+
+      <div class="org-columns">
+        <!-- Own Organizations -->
+        <div v-if="availableOrgs.ownOrgs.length > 0" class="org-column">
+          <div class="org-category-header">
+            <label class="checkbox-label category-checkbox">
+              <input
+                :checked="allOwnOrgsSelected"
+                type="checkbox"
+                class="checkbox"
+                @change="toggleAllOwnOrgs"
+              />
+              <h3 class="org-category-title">My Organizations</h3>
+            </label>
+          </div>
+          <div class="org-list">
+            <label v-for="org in availableOrgs.ownOrgs" :key="org" class="checkbox-label">
+              <input
+                v-model="orgFilterPreferences.enabledOrgs[org]"
+                type="checkbox"
+                class="checkbox"
+                @change="saveOrgFilters"
+              />
+              <span>{{ org }}</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- External Organizations (from forks) -->
+        <div v-if="availableOrgs.externalOrgs.length > 0" class="org-column">
+          <div class="org-category-header">
+            <label class="checkbox-label category-checkbox">
+              <input
+                :checked="allExternalOrgsSelected"
+                type="checkbox"
+                class="checkbox"
+                @change="toggleAllExternalOrgs"
+              />
+              <h3 class="org-category-title">Other</h3>
+            </label>
+          </div>
+          <div class="org-list">
+            <label v-for="org in availableOrgs.externalOrgs" :key="org" class="checkbox-label">
+              <input
+                v-model="orgFilterPreferences.enabledOrgs[org]"
+                type="checkbox"
+                class="checkbox"
+                @change="saveOrgFilters"
+              />
+              <span>{{ org }}</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <p v-if="orgFilterSaved" class="success small">✓ Organization filters saved</p>
+    </div>
+
     <div v-if="isAuthenticated" class="section">
       <h2>Keyboard Shortcut</h2>
       <p class="instructions">Configure the keyboard shortcut to open Git Look Around.</p>
@@ -172,7 +242,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import {
   saveGitHubToken,
   getGitHubToken,
@@ -185,7 +255,11 @@ import {
   type HotkeyPreferences,
   getDebugMode,
   saveDebugMode,
+  getOrgFilterPreferences,
+  saveOrgFilterPreferences,
+  type OrgFilterPreferences,
 } from '@/src/storage/chrome';
+import { getUniqueOrganizations, type CategorizedOrganizations } from '@/src/storage/db';
 
 const tokenInput = ref('');
 const actualToken = ref(''); // Store the actual token
@@ -206,6 +280,14 @@ const hotkeyPreferences = ref<HotkeyPreferences>({
 });
 const hotkeyPreferencesSaved = ref(false);
 const customHostsInput = ref('');
+const availableOrgs = ref<CategorizedOrganizations>({
+  ownOrgs: [],
+  externalOrgs: [],
+});
+const orgFilterPreferences = ref<OrgFilterPreferences>({
+  enabledOrgs: {},
+});
+const orgFilterSaved = ref(false);
 
 function maskToken(token: string): string {
   if (!token || token.length < 12) return token;
@@ -231,6 +313,20 @@ onMounted(async () => {
 
   console.log('[Options] Loaded hotkey preferences:', hotkeyPreferences.value);
   console.log('[Options] Custom hosts input:', customHostsInput.value);
+
+  // Load organizations and org filter preferences
+  if (isAuthenticated.value) {
+    availableOrgs.value = await getUniqueOrganizations();
+    orgFilterPreferences.value = await getOrgFilterPreferences();
+
+    // Initialize missing orgs to enabled (default)
+    const allOrgs = [...availableOrgs.value.ownOrgs, ...availableOrgs.value.externalOrgs];
+    for (const org of allOrgs) {
+      if (!(org in orgFilterPreferences.value.enabledOrgs)) {
+        orgFilterPreferences.value.enabledOrgs[org] = true;
+      }
+    }
+  }
 
   // Load keyboard shortcut
   await loadShortcut();
@@ -360,6 +456,50 @@ async function saveHotkeyPrefs() {
   window.setTimeout(() => {
     browser.runtime.reload();
   }, 1000);
+}
+
+async function saveOrgFilters() {
+  await saveOrgFilterPreferences(orgFilterPreferences.value);
+  orgFilterSaved.value = true;
+
+  // Hide success message after 2 seconds
+  window.setTimeout(() => {
+    orgFilterSaved.value = false;
+  }, 2000);
+}
+
+// Computed: Check if all own orgs are selected
+const allOwnOrgsSelected = computed(() => {
+  if (availableOrgs.value.ownOrgs.length === 0) return false;
+  return availableOrgs.value.ownOrgs.every(
+    (org) => orgFilterPreferences.value.enabledOrgs[org] === true,
+  );
+});
+
+// Computed: Check if all external orgs are selected
+const allExternalOrgsSelected = computed(() => {
+  if (availableOrgs.value.externalOrgs.length === 0) return false;
+  return availableOrgs.value.externalOrgs.every(
+    (org) => orgFilterPreferences.value.enabledOrgs[org] === true,
+  );
+});
+
+// Toggle all own orgs
+function toggleAllOwnOrgs() {
+  const newValue = !allOwnOrgsSelected.value;
+  for (const org of availableOrgs.value.ownOrgs) {
+    orgFilterPreferences.value.enabledOrgs[org] = newValue;
+  }
+  saveOrgFilters();
+}
+
+// Toggle all external orgs
+function toggleAllExternalOrgs() {
+  const newValue = !allExternalOrgsSelected.value;
+  for (const org of availableOrgs.value.externalOrgs) {
+    orgFilterPreferences.value.enabledOrgs[org] = newValue;
+  }
+  saveOrgFilters();
 }
 </script>
 
@@ -741,5 +881,72 @@ h2 {
 .shortcut-key.unset {
   color: var(--text-secondary);
   font-style: italic;
+}
+
+.org-columns {
+  display: flex;
+  gap: 20px;
+  margin-top: 12px;
+}
+
+.org-column {
+  flex: 1;
+  min-width: 0;
+}
+
+.org-category-header {
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--border-color);
+}
+
+.category-checkbox {
+  cursor: pointer;
+  user-select: none;
+}
+
+.category-checkbox .org-category-title {
+  display: inline;
+  font-size: 17px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text-primary);
+  letter-spacing: 0.3px;
+}
+
+.org-category-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-top: 12px;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+}
+
+.org-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 186px; /* 6rows * 31 */
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+/* Custom scrollbar styling */
+.org-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.org-list::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+  border-radius: 4px;
+}
+
+.org-list::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+.org-list::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
 }
 </style>

@@ -219,6 +219,57 @@ export async function setRepoIndexed(repoId: number, indexed: boolean): Promise<
   return saveRepo(updatedRepo);
 }
 
+/**
+ * Categorized organizations
+ */
+export interface CategorizedOrganizations {
+  ownOrgs: string[]; // Personal account + organizations you own/contribute to
+  externalOrgs: string[]; // Organizations from forks (not owned by you)
+}
+
+/**
+ * Get unique organizations from all repos, categorized into own vs external
+ * Own orgs: Personal account + orgs where you have non-fork repos or contribute
+ * External orgs: Orgs that ONLY contain fork parent repos
+ */
+export async function getUniqueOrganizations(): Promise<CategorizedOrganizations> {
+  const repos = await getAllRepos();
+  const orgRepoMap = new Map<string, RepoRecord[]>();
+
+  // Group repos by organization
+  for (const repo of repos) {
+    const parts = repo.full_name.split('/');
+    if (parts.length >= 2) {
+      const [owner] = parts;
+      if (!orgRepoMap.has(owner)) {
+        orgRepoMap.set(owner, []);
+      }
+      orgRepoMap.get(owner)!.push(repo);
+    }
+  }
+
+  const ownOrgs: string[] = [];
+  const externalOrgs: string[] = [];
+
+  // Categorize each organization
+  for (const [org, orgRepos] of orgRepoMap.entries()) {
+    // Check if this org has any repos that are NOT fork parents
+    // If all repos are fork parents, it's an external org
+    const hasNonForkParentRepos = orgRepos.some((repo) => !repo.is_parent_of_my_fork);
+
+    if (hasNonForkParentRepos) {
+      ownOrgs.push(org);
+    } else {
+      externalOrgs.push(org);
+    }
+  }
+
+  return {
+    ownOrgs: ownOrgs.sort(),
+    externalOrgs: externalOrgs.sort(),
+  };
+}
+
 // ==================== Issue-specific helpers ====================
 
 export async function getAllIssues(): Promise<IssueRecord[]> {
