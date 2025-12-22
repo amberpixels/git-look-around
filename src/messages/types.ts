@@ -18,6 +18,7 @@ export const MessageType = {
   CACHE_UPDATED: 'CACHE_UPDATED',
   FETCH_AND_SAVE_PR: 'FETCH_AND_SAVE_PR',
   FETCH_AND_SAVE_ISSUE: 'FETCH_AND_SAVE_ISSUE',
+  TOKEN_SAVED: 'TOKEN_SAVED',
 } as const;
 
 export type MessageType = (typeof MessageType)[keyof typeof MessageType];

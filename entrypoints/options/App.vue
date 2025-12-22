@@ -260,6 +260,8 @@ import {
   type OrgFilterPreferences,
 } from '@/src/storage/chrome';
 import { getUniqueOrganizations, type CategorizedOrganizations } from '@/src/storage/db';
+import { MessageType } from '@/src/messages/types';
+import type { ExtensionMessage } from '@/src/messages/types';
 
 const tokenInput = ref('');
 const actualToken = ref(''); // Store the actual token
@@ -375,6 +377,14 @@ async function saveToken() {
 
     // Show masked token
     tokenInput.value = maskToken(input);
+
+    // Notify background script to trigger sync
+    const message: ExtensionMessage = {
+      type: MessageType.TOKEN_SAVED,
+    };
+    browser.runtime.sendMessage(message).catch((err) => {
+      console.error('[Options] Failed to notify background about token save:', err);
+    });
 
     // Hide success message after 3 seconds
     window.setTimeout(() => {

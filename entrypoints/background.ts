@@ -128,6 +128,19 @@ export default defineBackground(() => {
       });
     }
 
+    // Check if token exists before running initial sync
+    const { getGitHubToken } = await import('@/src/storage/chrome');
+    const token = await getGitHubToken();
+
+    if (!token) {
+      console.warn(
+        '[Background] No GitHub token found - skipping initial sync. Sync will start when token is configured.',
+      );
+      // Still start quick-check loop (it will skip checks until token is available)
+      startQuickCheckLoop();
+      return;
+    }
+
     // Run initial sync
     console.warn('[Background] Starting initial sync...');
     try {
@@ -696,6 +709,22 @@ export default defineBackground(() => {
               sendResponse({
                 success: false,
                 error: error instanceof Error ? error.message : 'Failed to fetch issue',
+              });
+            }
+            break;
+          }
+
+          case MessageType.TOKEN_SAVED: {
+            console.warn('[Background] Token saved - triggering initial sync...');
+            try {
+              await forceImport();
+              console.warn('[Background] Initial sync after token save completed');
+              sendResponse({ success: true });
+            } catch (error) {
+              console.error('[Background] Initial sync after token save failed:', error);
+              sendResponse({
+                success: false,
+                error: error instanceof Error ? error.message : 'Sync failed',
               });
             }
             break;
