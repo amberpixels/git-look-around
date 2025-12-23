@@ -1403,12 +1403,28 @@ async function toggle() {
  * Handle cache update from background script
  * Only update UI if palette is currently open and showing results
  */
-function handleCacheUpdate(results: SearchResultItem[]) {
+async function handleCacheUpdate(results: SearchResultItem[] | null) {
   // Only update if palette is open
   if (panelMode.value === 'HIDDEN') return;
 
-  console.log('[CommandPalette] Received cache update with', results.length, 'results');
-  rawSearchResults.value = results;
+  // If results provided, use them directly
+  if (results && results.length > 0) {
+    console.log('[CommandPalette] Received cache update with', results.length, 'results');
+    rawSearchResults.value = results;
+    return;
+  }
+
+  // If no results provided (null), re-fetch from background
+  console.log(
+    '[CommandPalette] Cache invalidated during sync - refreshing repos and search results',
+  );
+
+  // CRITICAL: Refresh repos array to update empty state check (repos.length === 0)
+  // This fixes the issue where palette opens with 0 repos and doesn't update during sync
+  await loadReposData();
+
+  // Also refresh search results
+  fetchSearchResults(normalizedSearchQuery.value);
 }
 
 /**

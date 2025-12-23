@@ -188,10 +188,16 @@ function isRepoOfInterest(repo: {
 }
 
 /**
+ * Progress callback type for import updates
+ */
+export type ImportProgressCallback = (event: 'repos_saved' | 'repo_processed') => void;
+
+/**
  * Main import function - imports all data from GitHub to IndexedDB
  * Saves data in chunks as it fetches, so UI can display partial results
+ * @param onProgress Optional callback called when progress is made (repos saved, repo processed)
  */
-export async function runImport(): Promise<void> {
+export async function runImport(onProgress?: ImportProgressCallback): Promise<void> {
   const canRun = await shouldRunImport();
   if (!canRun) {
     console.warn('[Import] Skipping import - shouldRunImport returned false');
@@ -342,6 +348,9 @@ export async function runImport(): Promise<void> {
 
     // Save updated indexed flags
     await saveRepos(finalRepoRecords);
+
+    // Notify that repos have been saved (triggers cache invalidation + UI update)
+    onProgress?.('repos_saved');
 
     const nonIndexedRepos = finalRepoRecords.filter((repo) => !repo.indexed);
 
@@ -515,6 +524,9 @@ export async function runImport(): Promise<void> {
 
         // Wait for all enabled fetches to complete (they won't throw since we catch errors individually)
         await Promise.all(promises);
+
+        // Notify that a repo has been fully processed (triggers cache invalidation + UI update)
+        onProgress?.('repo_processed');
       } catch (err) {
         // This should rarely be reached now, but keep as safety net
         console.error(`[Import] ✗ Unexpected error for ${repo.full_name}:`, err);
@@ -560,7 +572,7 @@ export async function runImport(): Promise<void> {
 /**
  * Force an import even if one recently completed
  */
-export async function forceImport(): Promise<void> {
+export async function forceImport(onProgress?: ImportProgressCallback): Promise<void> {
   console.warn('[Import] Force import requested');
 
   // Reset the import state completely to allow immediate import
@@ -570,7 +582,7 @@ export async function forceImport(): Promise<void> {
     lastError: null,
   });
 
-  return runImport();
+  return runImport(onProgress);
 }
 
 /**

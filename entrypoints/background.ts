@@ -116,6 +116,46 @@ export default defineBackground(() => {
     clearSearchResultsCache,
   } = useSearchCache();
 
+  // Throttle for sync progress updates (max once per 2 seconds)
+  let lastSyncProgressUpdate = 0;
+  const SYNC_PROGRESS_THROTTLE_MS = 2000;
+
+  /**
+   * Handle import progress events - clear cache and notify tabs
+   */
+  async function handleImportProgress(event: 'repos_saved' | 'repo_processed') {
+    const now = Date.now();
+
+    // Throttle updates to avoid spamming (except for repos_saved which is important)
+    if (event === 'repo_processed' && now - lastSyncProgressUpdate < SYNC_PROGRESS_THROTTLE_MS) {
+      return;
+    }
+
+    lastSyncProgressUpdate = now;
+
+    console.log(`[Background] Import progress: ${event} - clearing cache and notifying tabs`);
+
+    // Clear search cache
+    await clearSearchResultsCache();
+    cacheGeneration++;
+
+    // Notify all tabs to refresh (without sending results - let them re-fetch)
+    browser.tabs.query({}).then((tabs) => {
+      tabs.forEach((tab) => {
+        if (tab.id) {
+          browser.tabs
+            .sendMessage(tab.id, {
+              type: MessageType.CACHE_UPDATED,
+              payload: null, // Let content script re-fetch
+            })
+            .catch(() => {
+              // Tab might not have content script, ignore
+            });
+        }
+      });
+    });
+  }
+
   // Initialize sync system
   (async () => {
     // Clear any stuck sync state from previous session (e.g., hot-reload, extension restart)
@@ -144,7 +184,7 @@ export default defineBackground(() => {
     // Run initial sync
     console.warn('[Background] Starting initial sync...');
     try {
-      await runImport();
+      await runImport(handleImportProgress);
       console.warn('[Background] Initial sync completed, starting quick-check loop...');
       startQuickCheckLoop();
     } catch (err) {
@@ -207,7 +247,7 @@ export default defineBackground(() => {
           }
 
           case MessageType.FORCE_IMPORT: {
-            await forceImport();
+            await forceImport(handleImportProgress);
             sendResponse({ success: true });
             break;
           }
@@ -717,7 +757,7 @@ export default defineBackground(() => {
           case MessageType.TOKEN_SAVED: {
             console.warn('[Background] Token saved - triggering initial sync...');
             try {
-              await forceImport();
+              await forceImport(handleImportProgress);
               console.warn('[Background] Initial sync after token save completed');
               sendResponse({ success: true });
             } catch (error) {
