@@ -218,7 +218,7 @@ function getTimeAgo(timestamp: number): string {
   <div class="popup" :class="{ 'dark-theme': isDarkTheme }">
     <div class="header">
       <div class="header-content">
-        <h1>Git Look Around</h1>
+        <h1>GitHub Look-Around</h1>
         <button
           v-if="isDebugMode"
           class="reload-btn"
@@ -313,7 +313,7 @@ function getTimeAgo(timestamp: number): string {
 
     <div v-else class="unauthenticated">
       <div class="status-badge error">⚠ Not Authenticated</div>
-      <p class="message">You need to configure your GitHub token to use Git Look Around.</p>
+      <p class="message">You need to configure your GitHub token to use GitHub Look-Around.</p>
       <button class="button" @click="openOptions">Open Settings</button>
     </div>
 

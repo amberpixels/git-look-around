@@ -1,5 +1,5 @@
 /**
- * IndexedDB storage layer for Git Look Around
+ * IndexedDB storage layer for Git Look-Around
  * Stores repos, issues, pull requests, and metadata
  */
 

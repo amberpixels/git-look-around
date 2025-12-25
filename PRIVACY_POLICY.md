@@ -1,10 +1,10 @@
-# Privacy Policy for Git Look Around
+# Privacy Policy for GitHub Look-Around
 
 **Last Updated:** December 17, 2025
 
 ## Overview
 
-Git Look Around is a browser extension that provides a command palette for quickly searching and navigating GitHub repositories, pull requests, and issues. We are committed to protecting your privacy and being transparent about what data we collect and how we use it.
+GitHub Look-Around is a browser extension that provides a command palette for quickly searching and navigating GitHub repositories, pull requests, and issues. We are committed to protecting your privacy and being transparent about what data we collect and how we use it.
 
 ## What Data We Collect
 
@@ -113,7 +113,7 @@ Questions or concerns about privacy?
 
 ## Open Source Commitment
 
-Git Look Around is fully open source. You can audit our code at any time to verify these privacy practices:
+GitHub Look-Around is fully open source. You can audit our code at any time to verify these privacy practices:
 - Repository: https://github.com/amberpixels/git-look-around
 - License: MIT License
 

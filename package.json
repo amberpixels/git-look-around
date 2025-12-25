@@ -1,6 +1,6 @@
 {
   "name": "git-look-around",
-  "description": "Git Look Around (Github) browser extension",
+  "description": "GitHub Look-Around browser extension",
   "private": true,
   "version": "0.1.1",
   "type": "module",

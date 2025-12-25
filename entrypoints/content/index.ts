@@ -47,7 +47,7 @@ async function detectAndRecordVisit() {
   }
 
   const fullName = `${owner}/${repo}`;
-  await debugWarn(`[Git Look Around] On repo: ${fullName}`);
+  await debugWarn(`[Git Look-Around] On repo: ${fullName}`);
 
   // Check if we're on a PR or Issue page
   const prMatch = path.match(/^\/[^/]+\/[^/]+\/pull\/(\d+)/);
@@ -66,7 +66,7 @@ async function detectAndRecordVisit() {
       if (repoRecord) {
         // Always record repo visit
         await debugWarn(
-          `[Git Look Around] Recording visit to repo ${fullName} (ID: ${repoRecord.id})`,
+          `[Git Look-Around] Recording visit to repo ${fullName} (ID: ${repoRecord.id})`,
         );
         await browser.runtime.sendMessage({
           type: MessageType.RECORD_VISIT,
@@ -87,7 +87,7 @@ async function detectAndRecordVisit() {
             // If PR not found in database, fetch it on-demand
             if (!pr) {
               await debugWarn(
-                `[Git Look Around] PR #${prNumber} not in database, fetching on-demand`,
+                `[Git Look-Around] PR #${prNumber} not in database, fetching on-demand`,
               );
               const fetchResponse = await browser.runtime.sendMessage({
                 type: MessageType.FETCH_AND_SAVE_PR,
@@ -101,7 +101,7 @@ async function detectAndRecordVisit() {
 
             if (pr) {
               await debugWarn(
-                `[Git Look Around] Recording visit to PR #${prNumber} (ID: ${pr.id})`,
+                `[Git Look-Around] Recording visit to PR #${prNumber} (ID: ${pr.id})`,
               );
               await browser.runtime.sendMessage({
                 type: MessageType.RECORD_VISIT,
@@ -127,7 +127,7 @@ async function detectAndRecordVisit() {
             // If issue not found in database, fetch it on-demand
             if (!issue) {
               await debugWarn(
-                `[Git Look Around] Issue #${issueNumber} not in database, fetching on-demand`,
+                `[Git Look-Around] Issue #${issueNumber} not in database, fetching on-demand`,
               );
               const fetchResponse = await browser.runtime.sendMessage({
                 type: MessageType.FETCH_AND_SAVE_ISSUE,
@@ -141,7 +141,7 @@ async function detectAndRecordVisit() {
 
             if (issue) {
               await debugWarn(
-                `[Git Look Around] Recording visit to Issue #${issueNumber} (ID: ${issue.id})`,
+                `[Git Look-Around] Recording visit to Issue #${issueNumber} (ID: ${issue.id})`,
               );
               await browser.runtime.sendMessage({
                 type: MessageType.RECORD_VISIT,
@@ -151,15 +151,15 @@ async function detectAndRecordVisit() {
           }
         }
 
-        await debugWarn(`[Git Look Around] Visit recorded successfully`);
+        await debugWarn(`[Git Look-Around] Visit recorded successfully`);
       } else {
         await debugWarn(
-          `[Git Look Around] Repo ${fullName} not in database yet, skipping visit tracking`,
+          `[Git Look-Around] Repo ${fullName} not in database yet, skipping visit tracking`,
         );
       }
     }
   } catch (error) {
-    console.error('[Git Look Around] Failed to record visit:', error);
+    console.error('[Git Look-Around] Failed to record visit:', error);
   }
 }
 
@@ -192,13 +192,13 @@ export default defineContentScript({
     }
 
     if (!shouldRun) {
-      await debugWarn(`[Git Look Around] Skipping initialization on ${currentHost}`);
+      await debugWarn(`[Git Look-Around] Skipping initialization on ${currentHost}`);
       return;
     }
 
     // Initialize debug mode cache
     await initDebugMode();
-    await debugWarn('[Git Look Around] Content script loaded on GitHub');
+    await debugWarn('[Git Look-Around] Content script loaded on GitHub');
 
     // Create container for Vue app
     const container = document.createElement('div');
@@ -220,7 +220,7 @@ export default defineContentScript({
 
     // Track visit when page loads
     detectAndRecordVisit().catch((err) => {
-      console.error('[Git Look Around] Failed to record visit:', err);
+      console.error('[Git Look-Around] Failed to record visit:', err);
     });
 
     // Track visits on navigation (GitHub uses pushState for navigation)
@@ -229,7 +229,7 @@ export default defineContentScript({
       if (window.location.pathname !== lastPath) {
         lastPath = window.location.pathname;
         detectAndRecordVisit().catch((err) => {
-          console.error('[Git Look Around] Failed to record visit:', err);
+          console.error('[Git Look-Around] Failed to record visit:', err);
         });
       }
     });

@@ -1052,7 +1052,7 @@ function enterFocusedMode() {
   const repo = getRepoById(focusedItem.entityId);
   if (!repo) return;
 
-  debugLogSync('[Git Look Around] Entering focused mode for:', repo.full_name);
+  debugLogSync('[Git Look-Around] Entering focused mode for:', repo.full_name);
 
   // Cache current state for instant restoration
   focusedModeCache.value = {
@@ -1091,7 +1091,7 @@ function enterFocusedMode() {
 function exitFocusedMode() {
   if (!repoFilter.value) return;
 
-  debugLogSync('[Git Look Around] Exiting focused mode');
+  debugLogSync('[Git Look-Around] Exiting focused mode');
 
   // Clear focused mode
   repoFilter.value = null;
@@ -1152,10 +1152,10 @@ function handleBackspace(e: KeyboardEvent) {
  */
 function handleSearchInput() {
   if (searchQuery.value.trim() && panelMode.value === 'NORMAL') {
-    debugWarnSync('[Git Look Around] User typed, entering FILTERED mode');
+    debugWarnSync('[Git Look-Around] User typed, entering FILTERED mode');
     panelMode.value = 'FILTERED';
   } else if (!searchQuery.value.trim() && panelMode.value === 'FILTERED') {
-    debugWarnSync('[Git Look Around] Search cleared, returning to NORMAL mode');
+    debugWarnSync('[Git Look-Around] Search cleared, returning to NORMAL mode');
     panelMode.value = 'NORMAL';
   }
 }
@@ -1268,18 +1268,18 @@ const rateLimitTooltip = computed(() => {
  * Panel mode transitions
  */
 async function enterFilteredMode() {
-  await debugLog('[Git Look Around] State: enterFilteredMode', {
+  await debugLog('[Git Look-Around] State: enterFilteredMode', {
     currentMode: panelMode.value,
     skipNextFocusEvent: skipNextFocusEvent.value,
   });
   if (skipNextFocusEvent.value) {
     skipNextFocusEvent.value = false;
-    await debugLog('[Git Look Around] Skipping initial focus event');
+    await debugLog('[Git Look-Around] Skipping initial focus event');
     return;
   }
   if (panelMode.value === 'NORMAL') {
     panelMode.value = 'FILTERED';
-    await debugLog('[Git Look Around] State Change: NORMAL -> FILTERED');
+    await debugLog('[Git Look-Around] State Change: NORMAL -> FILTERED');
   }
 }
 
@@ -1289,7 +1289,7 @@ function handleInputBlur() {
 }
 
 async function exitFilteredModeAndClear() {
-  await debugLog('[Git Look Around] State: exitFilteredModeAndClear', {
+  await debugLog('[Git Look-Around] State: exitFilteredModeAndClear', {
     beforeSearchQuery: searchQuery.value,
   });
 
@@ -1316,7 +1316,7 @@ async function exitFilteredModeAndClear() {
     searchInputRef.value?.focus();
   });
 
-  await debugLog('[Git Look Around] State Change: FILTERED -> NORMAL (cleared)', {
+  await debugLog('[Git Look-Around] State Change: FILTERED -> NORMAL (cleared)', {
     afterSearchQuery: searchQuery.value,
     panelMode: panelMode.value,
   });
@@ -1338,7 +1338,7 @@ function createSkeletonItems(count: number): SearchResultItem[] {
 }
 
 async function show() {
-  await debugLog('[Git Look Around] State: show');
+  await debugLog('[Git Look-Around] State: show');
 
   // Clear any pending debounce
   if (debounceTimeout) {
@@ -1382,11 +1382,11 @@ async function show() {
   await nextTick();
   skipNextFocusEvent.value = true;
   searchInputRef.value?.focus();
-  await debugLog('[Git Look Around] Palette shown, input focused, panelMode =', panelMode.value);
+  await debugLog('[Git Look-Around] Palette shown, input focused, panelMode =', panelMode.value);
 }
 
 async function hide() {
-  await debugLog('[Git Look Around] State: hide');
+  await debugLog('[Git Look-Around] State: hide');
   panelMode.value = 'HIDDEN';
   sendMessage(MessageType.SET_QUICK_CHECK_IDLE);
 }
@@ -1671,18 +1671,18 @@ useKeyboardShortcuts(
     select: (newTab) => navigateToFocusedTarget(newTab),
     tab: () => handleTab(),
     dismiss: async () => {
-      await debugLog('[Git Look Around] Action: dismiss', { panelMode: panelMode.value });
+      await debugLog('[Git Look-Around] Action: dismiss', { panelMode: panelMode.value });
 
       // If in nested mode, exit nested mode first
       if (repoFilter.value) {
-        await debugLog('[Git Look Around] Exiting nested filtered mode via Escape');
+        await debugLog('[Git Look-Around] Exiting nested filtered mode via Escape');
         exitFocusedMode();
         return;
       }
 
       if (panelMode.value === 'FILTERED') {
         await exitFilteredModeAndClear();
-        await debugLog('[Git Look Around] After exitFilteredModeAndClear:', {
+        await debugLog('[Git Look-Around] After exitFilteredModeAndClear:', {
           searchQuery: searchQuery.value,
           panelMode: panelMode.value,
         });

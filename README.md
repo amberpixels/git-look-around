@@ -1,4 +1,4 @@
-# Git Look Around
+# GitHub Look-Around
 
 > Lightning-fast command palette for GitHub repos, PRs, and issues.
 
@@ -14,7 +14,7 @@ A Chrome/Firefox extension that adds a command palette to GitHub so you can jump
 Demo GIF placeholder (will be added after recording the command palette in action).
 
 ## Why this palette?
-- GitHub’s feature-preview Command Palette is heavier and broader; Git Look Around stays lightweight and focused on fast search + navigation.
+- GitHub's feature-preview Command Palette is heavier and broader; GitHub Look-Around stays lightweight and focused on fast search + navigation.
 - Everything is reactive: as soon as sync finishes, repo/PR/issue results update without reloading GitHub.
 - Quick hop back to recent places (visited filter), inspired by the fast-switcher experience in modern IDEs.
 

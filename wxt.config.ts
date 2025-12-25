@@ -4,8 +4,8 @@ import { defineConfig } from 'wxt';
 export default defineConfig({
   modules: ['@wxt-dev/module-vue'],
   manifest: {
-    name: 'Git Look Around',
-    description: 'GitHub fuzzy finder for quick navigation to repos, PRs, and issues',
+    name: 'GitHub Look-Around',
+    description: 'Lightning fast Github Command Palette to repos, PRs, and issues',
     version: '0.1.1',
     permissions: ['storage'],
     commands: {

@@ -1,6 +1,6 @@
 <template>
   <div class="options-container">
-    <h1>Git Look Around Settings</h1>
+    <h1>GitHub Look-Around Settings</h1>
 
     <div class="section">
       <h2>GitHub Authentication</h2>
@@ -27,7 +27,7 @@
                 >
               </li>
               <li>Click "Generate new token (classic)"</li>
-              <li>Give it a name (e.g., "Git Look Around")</li>
+              <li>Give it a name (e.g., "GitHub Look-Around")</li>
               <li>
                 Select scopes: <code>repo</code>, <code>read:user</code>, <code>read:org</code>
               </li>
@@ -166,7 +166,7 @@
 
     <div v-if="isAuthenticated" class="section">
       <h2>Keyboard Shortcut</h2>
-      <p class="instructions">Configure the keyboard shortcut to open Git Look Around.</p>
+      <p class="instructions">Configure the keyboard shortcut to open GitHub Look-Around.</p>
 
       <div class="shortcut-info">
         <div class="shortcut-display">
