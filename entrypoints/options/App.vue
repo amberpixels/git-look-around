@@ -3,63 +3,202 @@
     <h1>GitHub Look-Around Settings</h1>
 
     <div class="section">
-      <h2>GitHub Authentication</h2>
-      <p class="instructions">
-        Personal Access Token
-        <span class="help-link-wrapper">
-          <a
-            href="https://github.com/settings/tokens/new"
-            target="_blank"
-            class="help-link"
-            @click.prevent="showTooltip = !showTooltip"
-            >(create new)</a
-          >
-          <div v-if="showTooltip" class="tooltip">
-            <button class="tooltip-close" @click="showTooltip = false">×</button>
-            <h4>How to create a GitHub token:</h4>
-            <ol>
-              <li>
-                <a
-                  href="https://github.com/settings/tokens/new"
-                  target="_blank"
-                  @click="showTooltip = false"
-                  >Click here to open GitHub Token Settings</a
+      <div class="section-header">
+        <h2>GitHub Authentication</h2>
+        <button
+          v-if="isAuthenticated && authMethod === 'oauth'"
+          class="btn-sign-out-header"
+          @click="handleSignOut"
+        >
+          Sign Out
+        </button>
+      </div>
+
+      <!-- OAuth Section -->
+      <div v-if="!isAuthenticated || authMethod === 'oauth'" class="auth-method-section">
+        <h3 v-if="!isAuthenticated">Recommended: Sign in with GitHub</h3>
+        <p v-if="!isAuthenticated" class="instructions">
+          Secure authentication using GitHub Device Flow. Direct communication with GitHub - no
+          intermediary servers.
+        </p>
+
+        <div
+          v-if="authMethod === 'oauth' && isAuthenticated && !deviceFlowActive"
+          class="oauth-user-card"
+        >
+          <div class="card-header">
+            <div class="user-header">
+              <img
+                v-if="githubUser?.avatar_url"
+                :src="githubUser.avatar_url"
+                class="user-avatar"
+                alt="Avatar"
+              />
+              <div class="user-info">
+                <div class="user-name">
+                  <span class="status-icon">✓</span>
+                  <span class="username">{{ githubUser?.login || 'GitHub User' }}</span>
+                </div>
+                <span class="auth-time"
+                  >Authenticated {{ formatAuthDate(authMetadata?.authenticatedAt) }}</span
                 >
-              </li>
-              <li>Click "Generate new token (classic)"</li>
-              <li>Give it a name (e.g., "GitHub Look-Around")</li>
-              <li>
-                Select scopes: <code>repo</code>, <code>read:user</code>, <code>read:org</code>
-              </li>
-              <li>Click "Generate token" and paste it above</li>
-            </ol>
+              </div>
+            </div>
+
+            <div class="scopes-info">
+              <span class="scope-badge">repo</span>
+              <span class="scope-badge">read:user</span>
+              <span class="scope-badge">read:org</span>
+            </div>
           </div>
-        </span>
-      </p>
 
-      <div class="token-form">
-        <div class="token-input-group">
-          <input
-            v-model="tokenInput"
-            type="text"
-            placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-            class="token-input"
-            @keyup.enter="saveToken"
-            @focus="handleTokenFocus"
-          />
-          <span v-if="isAuthenticated" class="token-status success" title="Token is valid">✓</span>
-          <span v-else-if="error" class="token-status error" title="Token is invalid">✗</span>
+          <div v-if="availableOrgs.ownOrgs.length > 0" class="org-info-inline">
+            <span class="org-label">Organizations: ({{ availableOrgs.ownOrgs.length }})</span>
+            {{ getSortedOrgs().slice(0, 20).join(', ')
+            }}<span v-if="availableOrgs.ownOrgs.length > 20"
+              >, +{{ availableOrgs.ownOrgs.length - 20 }} more</span
+            >
+          </div>
         </div>
 
-        <div class="token-actions">
-          <button class="btn-primary" :disabled="!tokenInput" @click="saveToken">
-            {{ isAuthenticated ? 'Update' : 'Save' }} Token
+        <!-- Device Flow Active State -->
+        <div v-if="deviceFlowActive" class="device-flow-container">
+          <div class="device-flow-step">
+            <h4>Step 1: Copy this code</h4>
+            <div class="user-code-display">
+              <span class="user-code">{{ userCode }}</span>
+              <button
+                class="btn-copy"
+                :class="{ copied: codeCopied }"
+                :title="codeCopied ? 'Copied!' : 'Copy code'"
+                @click="copyUserCode"
+              >
+                {{ codeCopied ? 'Copied' : 'Copy' }}
+              </button>
+            </div>
+          </div>
+
+          <div class="device-flow-step">
+            <h4>Step 2: Authorize on GitHub</h4>
+            <p class="device-flow-instructions">
+              A new tab should have opened to GitHub. If not, click below:
+            </p>
+            <a :href="verificationUri" target="_blank" class="btn-secondary btn-github-link">
+              Open GitHub Authorization
+            </a>
+          </div>
+
+          <div class="device-flow-step">
+            <h4>Step 3: Wait for confirmation</h4>
+            <div class="polling-status">
+              <div class="spinner"></div>
+              <span>{{ deviceFlowStatus }}</span>
+            </div>
+          </div>
+
+          <button class="btn-secondary btn-cancel" @click="cancelDeviceFlow">Cancel</button>
+        </div>
+
+        <!-- Normal State -->
+        <div v-if="!deviceFlowActive && !isAuthenticated" class="oauth-actions">
+          <button class="btn-primary btn-oauth" :disabled="oauthLoading" @click="handleOAuthSignIn">
+            <span v-if="!oauthLoading">Sign in with GitHub</span>
+            <span v-else>Starting authentication...</span>
           </button>
-          <button v-if="isAuthenticated" class="btn-secondary" @click="logout">Clear</button>
         </div>
 
-        <p v-if="error" class="error">{{ error }}</p>
-        <p v-if="tokenSaved" class="success small">✓ Token saved successfully</p>
+        <p v-if="oauthError" class="error">{{ oauthError }}</p>
+      </div>
+
+      <!-- Divider (only show when not authenticated) -->
+      <div v-if="!isAuthenticated" class="divider">
+        <span>OR</span>
+      </div>
+
+      <!-- PAT Section -->
+      <div v-if="!isAuthenticated || authMethod === 'pat'" class="auth-method-section">
+        <h3 v-if="!isAuthenticated">Advanced: Personal Access Token</h3>
+        <ol v-if="!isAuthenticated" class="pat-instructions">
+          <li>
+            <a
+              href="https://github.com/settings/tokens/new?description=git-look-around&from=git-look-around"
+              target="_blank"
+              >Click here to open GitHub Token Settings</a
+            >
+          </li>
+          <li>Permissions are highlighted</li>
+          <li>Generate token, copy and paste below</li>
+        </ol>
+
+        <!-- PAT Authenticated Card (matching OAuth style) -->
+        <div v-if="authMethod === 'pat' && isAuthenticated" class="oauth-user-card">
+          <div class="card-header">
+            <div class="user-header">
+              <img
+                v-if="githubUser?.avatar_url"
+                :src="githubUser.avatar_url"
+                class="user-avatar"
+                alt="Avatar"
+              />
+              <div class="user-info">
+                <div class="user-name">
+                  <span class="status-icon">✓</span>
+                  <span class="username">{{ githubUser?.login || 'GitHub User' }}</span>
+                </div>
+                <span class="auth-time"
+                  >Authenticated {{ formatAuthDate(authMetadata?.authenticatedAt) }}</span
+                >
+              </div>
+            </div>
+
+            <div class="scopes-info">
+              <span class="scope-badge">repo</span>
+              <span class="scope-badge">read:user</span>
+              <span class="scope-badge">read:org</span>
+            </div>
+          </div>
+
+          <div v-if="availableOrgs.ownOrgs.length > 0" class="org-info-inline">
+            <span class="org-label">Organizations: ({{ availableOrgs.ownOrgs.length }})</span>
+            {{ getSortedOrgs().slice(0, 20).join(', ')
+            }}<span v-if="availableOrgs.ownOrgs.length > 20"
+              >, +{{ availableOrgs.ownOrgs.length - 20 }} more</span
+            >
+          </div>
+        </div>
+
+        <div class="token-form">
+          <div v-if="authMethod === 'pat' && isAuthenticated" class="token-display-group">
+            <input v-model="tokenInput" type="text" class="token-input" readonly />
+            <span class="token-status success" title="Token is valid">✓</span>
+          </div>
+
+          <div v-else class="token-input-group">
+            <input
+              v-model="tokenInput"
+              type="text"
+              placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+              class="token-input"
+              @keyup.enter="saveToken"
+              @focus="handleTokenFocus"
+            />
+            <span v-if="error" class="token-status error" title="Token is invalid">✗</span>
+          </div>
+
+          <div v-if="authMethod === 'pat' && isAuthenticated" class="token-actions">
+            <button class="btn-primary" @click="handleTokenFocus">Update Token</button>
+            <button class="btn-secondary" @click="logout">Clear</button>
+          </div>
+
+          <div v-else class="token-actions">
+            <button class="btn-primary" :disabled="!tokenInput" @click="saveToken">
+              Save Token
+            </button>
+          </div>
+
+          <p v-if="error" class="error">{{ error }}</p>
+          <p v-if="tokenSaved" class="success small">✓ Token saved successfully</p>
+        </div>
       </div>
     </div>
 
@@ -258,17 +397,26 @@ import {
   getOrgFilterPreferences,
   saveOrgFilterPreferences,
   type OrgFilterPreferences,
+  getAuthMetadata,
+  getAuthMethod,
+  saveAuthMetadata,
+  removeAuthMetadata,
+  type AuthMetadata,
 } from '@/src/storage/chrome';
 import { getUniqueOrganizations, type CategorizedOrganizations } from '@/src/storage/db';
 import { MessageType } from '@/src/messages/types';
 import type { ExtensionMessage } from '@/src/messages/types';
+import {
+  startDeviceFlow,
+  completeDeviceFlow,
+  signOut as oauthSignOut,
+} from '@/src/auth/oauth-service';
 
 const tokenInput = ref('');
 const actualToken = ref(''); // Store the actual token
 const isAuthenticated = ref(false);
 const error = ref('');
 const tokenSaved = ref(false);
-const showTooltip = ref(false);
 const preferences = ref<ImportPreferences>({
   importIssues: true,
   importPullRequests: true,
@@ -291,6 +439,19 @@ const orgFilterPreferences = ref<OrgFilterPreferences>({
 });
 const orgFilterSaved = ref(false);
 
+// OAuth Device Flow state
+const oauthLoading = ref(false);
+const oauthError = ref('');
+const authMethod = ref<'oauth' | 'pat' | null>(null);
+const authMetadata = ref<AuthMetadata | null>(null);
+const deviceFlowActive = ref(false);
+const _deviceCode = ref('');
+const userCode = ref('');
+const verificationUri = ref('');
+const deviceFlowStatus = ref('');
+const codeCopied = ref(false);
+const githubUser = ref<{ login: string; avatar_url: string } | null>(null);
+
 function maskToken(token: string): string {
   if (!token || token.length < 12) return token;
   // Show first 7 characters and last 4: "ghp_abc...xyz1"
@@ -301,8 +462,12 @@ onMounted(async () => {
   const token = await getGitHubToken();
   isAuthenticated.value = !!token;
 
-  // Show masked token if exists
-  if (token) {
+  // Load auth method and metadata
+  authMethod.value = await getAuthMethod();
+  authMetadata.value = await getAuthMetadata();
+
+  // Show masked token if exists and using PAT
+  if (token && authMethod.value === 'pat') {
     actualToken.value = token;
     tokenInput.value = maskToken(token);
   }
@@ -327,6 +492,11 @@ onMounted(async () => {
       if (!(org in orgFilterPreferences.value.enabledOrgs)) {
         orgFilterPreferences.value.enabledOrgs[org] = true;
       }
+    }
+
+    // Load GitHub user info for both OAuth and PAT
+    if (authMethod.value === 'oauth' || authMethod.value === 'pat') {
+      await loadGitHubUserInfo();
     }
   }
 
@@ -370,10 +540,20 @@ async function saveToken() {
 
   try {
     await saveGitHubToken(input);
+    await saveAuthMetadata({
+      method: 'pat',
+      authenticatedAt: Date.now(),
+    });
+
     actualToken.value = input;
     isAuthenticated.value = true;
+    authMethod.value = 'pat';
+    authMetadata.value = await getAuthMetadata();
     error.value = '';
     tokenSaved.value = true;
+
+    // Load user info and orgs
+    await loadGitHubUserInfo();
 
     // Show masked token
     tokenInput.value = maskToken(input);
@@ -399,7 +579,10 @@ async function saveToken() {
 
 async function logout() {
   await removeGitHubToken();
+  await removeAuthMetadata();
   isAuthenticated.value = false;
+  authMethod.value = null;
+  authMetadata.value = null;
   tokenInput.value = '';
   error.value = '';
   tokenSaved.value = false;
@@ -511,6 +694,173 @@ function toggleAllExternalOrgs() {
   }
   saveOrgFilters();
 }
+
+// OAuth Device Flow functions
+async function handleOAuthSignIn() {
+  oauthLoading.value = true;
+  oauthError.value = '';
+  deviceFlowActive.value = false;
+
+  try {
+    // Step 1: Request device code
+    const startResult = await startDeviceFlow();
+
+    if (
+      !startResult.success ||
+      !startResult.userCode ||
+      !startResult.verificationUri ||
+      !startResult.deviceCode
+    ) {
+      oauthError.value = startResult.error || 'Failed to start authentication';
+      oauthLoading.value = false;
+      return;
+    }
+
+    // Show device code to user
+    deviceFlowActive.value = true;
+    userCode.value = startResult.userCode;
+    verificationUri.value = startResult.verificationUri;
+    deviceFlowStatus.value = 'Waiting for authorization...';
+
+    // Auto-open GitHub verification page
+    window.open(startResult.verificationUri, '_blank');
+
+    // Step 2: Poll for authorization using the same device code
+    const completeResult = await completeDeviceFlow(
+      startResult.deviceCode,
+      startResult.interval || 5,
+      startResult.expiresIn || 900,
+      (status) => {
+        deviceFlowStatus.value = status;
+      },
+    );
+
+    if (completeResult.success) {
+      isAuthenticated.value = true;
+      authMethod.value = 'oauth';
+      authMetadata.value = await getAuthMetadata();
+      deviceFlowActive.value = false;
+
+      // Clear PAT input if switching from PAT
+      tokenInput.value = '';
+      actualToken.value = '';
+
+      // Load GitHub user info
+      await loadGitHubUserInfo();
+
+      // Load organizations
+      availableOrgs.value = await getUniqueOrganizations();
+
+      // Notify background to trigger sync
+      const message: ExtensionMessage = {
+        type: MessageType.TOKEN_SAVED,
+      };
+      await browser.runtime.sendMessage(message);
+    } else {
+      oauthError.value = completeResult.error || 'Authentication failed';
+      deviceFlowActive.value = false;
+    }
+  } catch (err) {
+    oauthError.value = 'Failed to authenticate. Please try again.';
+    deviceFlowActive.value = false;
+    console.error('[Options] Device Flow error:', err);
+  } finally {
+    oauthLoading.value = false;
+  }
+}
+
+function cancelDeviceFlow() {
+  deviceFlowActive.value = false;
+  oauthLoading.value = false;
+  deviceFlowStatus.value = '';
+  oauthError.value = '';
+  codeCopied.value = false;
+}
+
+function copyUserCode() {
+  window.navigator.clipboard.writeText(userCode.value);
+  codeCopied.value = true;
+
+  // Reset after 2 seconds
+  window.setTimeout(() => {
+    codeCopied.value = false;
+  }, 2000);
+}
+
+async function handleSignOut() {
+  await oauthSignOut();
+  isAuthenticated.value = false;
+  authMethod.value = null;
+  authMetadata.value = null;
+  oauthError.value = '';
+}
+
+function formatAuthDate(timestamp: number | undefined): string {
+  if (!timestamp) return '';
+  const now = Date.now();
+  const diff = now - timestamp;
+
+  // Less than 1 hour
+  if (diff < 60 * 60 * 1000) {
+    const minutes = Math.floor(diff / (60 * 1000));
+    return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
+  }
+
+  // Less than 24 hours
+  if (diff < 24 * 60 * 60 * 1000) {
+    const hours = Math.floor(diff / (60 * 60 * 1000));
+    return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
+  }
+
+  // Less than 7 days
+  if (diff < 7 * 24 * 60 * 60 * 1000) {
+    const days = Math.floor(diff / (24 * 60 * 60 * 1000));
+    return `${days} day${days !== 1 ? 's' : ''} ago`;
+  }
+
+  // Fallback: show date
+  return new Date(timestamp).toLocaleDateString();
+}
+
+async function loadGitHubUserInfo() {
+  try {
+    // Fetch user info
+    const userResponse = await window.fetch('https://api.github.com/user', {
+      headers: {
+        Authorization: `token ${await getGitHubToken()}`,
+        Accept: 'application/vnd.github.v3+json',
+      },
+    });
+
+    if (userResponse.ok) {
+      const userData = await userResponse.json();
+      githubUser.value = {
+        login: userData.login,
+        avatar_url: userData.avatar_url,
+      };
+    }
+  } catch (error) {
+    console.error('[Options] Failed to load GitHub user info:', error);
+  }
+}
+
+function getSortedOrgs(): string[] {
+  if (!availableOrgs.value.ownOrgs.length) return [];
+
+  const username = githubUser.value?.login;
+  const orgs = [...availableOrgs.value.ownOrgs];
+
+  // Put user's personal org (same as username) first
+  if (username) {
+    const personalOrgIndex = orgs.findIndex((org) => org.toLowerCase() === username.toLowerCase());
+    if (personalOrgIndex > -1) {
+      const [personalOrg] = orgs.splice(personalOrgIndex, 1);
+      orgs.unshift(personalOrg);
+    }
+  }
+
+  return orgs;
+}
 </script>
 
 <style scoped>
@@ -543,9 +893,55 @@ h2 {
   border: 1px solid var(--border-color);
 }
 
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.btn-sign-out-header {
+  padding: 6px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  background: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn-sign-out-header:hover {
+  background: #c82333;
+}
+
 .instructions {
   margin-bottom: 8px;
   color: var(--text-secondary);
+}
+
+.pat-instructions {
+  margin: 8px 0 12px 0;
+  padding-left: 20px;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.pat-instructions li {
+  margin-bottom: 6px;
+}
+
+.pat-instructions a {
+  color: var(--link-color);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.pat-instructions a:hover {
+  text-decoration: underline;
 }
 
 .steps {
@@ -594,9 +990,9 @@ h2 {
 
 .tooltip {
   position: absolute;
-  top: 100%;
-  left: 0;
-  margin-top: 8px;
+  bottom: 100%;
+  right: 0;
+  margin-bottom: 8px;
   padding: 16px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
@@ -670,6 +1066,22 @@ h2 {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.token-display-group {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.token-display-group .token-input {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  cursor: default;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  letter-spacing: 0.5px;
 }
 
 .token-input {
@@ -958,5 +1370,284 @@ h2 {
 
 .org-list::-webkit-scrollbar-thumb:hover {
   background: var(--text-secondary);
+}
+
+/* OAuth UI Styles */
+.auth-method-section {
+  margin-bottom: 24px;
+}
+
+.auth-method-section h3 {
+  font-size: 17px;
+  margin-bottom: 8px;
+  margin-top: 12px;
+  color: var(--text-primary);
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  margin: 24px 0;
+  text-align: center;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.divider span {
+  padding: 0 16px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* OAuth User Card */
+.oauth-user-card {
+  background: var(--bg-primary);
+  border: 2px solid #2ea44f;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.user-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 2px solid var(--border-color);
+}
+
+.user-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.user-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.status-icon {
+  color: #2ea44f;
+  font-size: 18px;
+}
+
+.username {
+  color: var(--text-primary);
+}
+
+.auth-time {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.org-info-inline {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+
+.org-label {
+  color: var(--text-secondary);
+  margin-right: 6px;
+  font-weight: 600;
+}
+
+.scopes-info {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.scope-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  background: #ddf4ff;
+  color: #0969da;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+}
+
+.auth-status-display {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  width: fit-content;
+}
+
+.status-badge.success {
+  background: #d4edda;
+  color: #155724;
+}
+
+.auth-date {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.oauth-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.btn-oauth {
+  background: #2ea44f;
+}
+
+.btn-oauth:hover:not(:disabled) {
+  background: #2c974b;
+}
+
+.btn-oauth:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Device Flow UI Styles */
+.device-flow-container {
+  background: var(--bg-primary);
+  border: 2px solid var(--border-color);
+  border-radius: 8px;
+  padding: 20px;
+  margin: 16px 0;
+}
+
+.device-flow-step {
+  margin-bottom: 20px;
+}
+
+.device-flow-step:last-of-type {
+  margin-bottom: 12px;
+}
+
+.device-flow-step h4 {
+  font-size: 15px;
+  margin-bottom: 10px;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.user-code-display {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--code-bg);
+  padding: 16px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+}
+
+.user-code {
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.btn-copy {
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  background: var(--link-color);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 80px;
+}
+
+.btn-copy:hover {
+  background: #0969da;
+}
+
+.btn-copy.copied {
+  background: #2ea44f;
+}
+
+.btn-copy.copied:hover {
+  background: #2c974b;
+}
+
+.device-flow-instructions {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
+
+.btn-github-link {
+  display: inline-block;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  border-radius: 6px;
+  transition: background 0.15s ease;
+}
+
+.polling-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 3px solid var(--border-color);
+  border-top-color: var(--link-color);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.btn-cancel {
+  margin-top: 12px;
 }
 </style>

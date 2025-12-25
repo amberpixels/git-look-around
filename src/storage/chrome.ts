@@ -5,12 +5,23 @@
 
 const STORAGE_KEYS = {
   GITHUB_TOKEN: 'github_token',
+  AUTH_METADATA: 'auth_metadata',
   IMPORT_PREFERENCES: 'import_preferences',
   THEME_CACHE: 'theme_cache',
   HOTKEY_PREFERENCES: 'hotkey_preferences',
   DEBUG_MODE: 'debug_mode',
   ORG_FILTER_PREFERENCES: 'org_filter_preferences',
 } as const;
+
+/**
+ * Authentication metadata
+ * Tracks how the user authenticated (OAuth vs PAT) and when
+ */
+export interface AuthMetadata {
+  method: 'oauth' | 'pat';
+  authenticatedAt: number; // Unix timestamp
+  tokenExpiresAt?: number; // Optional: for future OAuth token expiration support
+}
 
 /**
  * User preferences for what to import
@@ -69,6 +80,38 @@ export async function removeGitHubToken(): Promise<void> {
 export async function isAuthenticated(): Promise<boolean> {
   const token = await getGitHubToken();
   return !!token;
+}
+
+/**
+ * Save authentication metadata
+ */
+export async function saveAuthMetadata(metadata: AuthMetadata): Promise<void> {
+  await browser.storage.local.set({
+    [STORAGE_KEYS.AUTH_METADATA]: metadata,
+  });
+}
+
+/**
+ * Get authentication metadata
+ */
+export async function getAuthMetadata(): Promise<AuthMetadata | null> {
+  const result = await browser.storage.local.get(STORAGE_KEYS.AUTH_METADATA);
+  return result[STORAGE_KEYS.AUTH_METADATA] || null;
+}
+
+/**
+ * Remove authentication metadata
+ */
+export async function removeAuthMetadata(): Promise<void> {
+  await browser.storage.local.remove(STORAGE_KEYS.AUTH_METADATA);
+}
+
+/**
+ * Check authentication method
+ */
+export async function getAuthMethod(): Promise<'oauth' | 'pat' | null> {
+  const metadata = await getAuthMetadata();
+  return metadata?.method || null;
 }
 
 /**

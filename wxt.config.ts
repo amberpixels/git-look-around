@@ -5,9 +5,9 @@ export default defineConfig({
   modules: ['@wxt-dev/module-vue'],
   manifest: {
     name: 'GitHub Look-Around',
-    description: 'Lightning fast Github Command Palette to repos, PRs, and issues',
-    version: '0.1.1',
-    permissions: ['storage'],
+    description: 'Lightning-fast Github Command Palette to repos, PRs, and issues',
+    version: '0.2.0',
+    permissions: ['storage', 'identity'],
     commands: {
       'toggle-overlay': {
         suggested_key: {
