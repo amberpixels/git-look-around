@@ -20,6 +20,7 @@ import {
 import { useUnifiedSearch } from '@/src/composables/useUnifiedSearch';
 import type { SearchableEntity, SearchResultItem } from '@/src/composables/useUnifiedSearch';
 import { useSearchCache } from '@/src/composables/useSearchCache';
+import { debugLog } from '@/src/utils/debug';
 
 /**
  * Check if search results have meaningfully changed (order or presence of items)
@@ -63,7 +64,7 @@ function getFirstResultToCache(
 
   // If first result is current repo and we have a second result, cache the second
   if (isCurrentRepo && results.length >= 2) {
-    console.log(
+    void debugLog(
       '[Background] First result is current repo, caching second result instead:',
       results[1].title,
     );
@@ -133,7 +134,7 @@ export default defineBackground(() => {
 
     lastSyncProgressUpdate = now;
 
-    console.log(`[Background] Import progress: ${event} - clearing cache and notifying tabs`);
+    void debugLog(`[Background] Import progress: ${event} - clearing cache and notifying tabs`);
 
     // Clear search cache
     await clearSearchResultsCache();
@@ -478,7 +479,7 @@ export default defineBackground(() => {
                   },
                 }));
 
-                console.log(
+                void debugLog(
                   '[Background] [DEBUG_SEARCH] Returning cached search results:',
                   cachedResults.length,
                 );
@@ -486,7 +487,7 @@ export default defineBackground(() => {
 
                 // Capture current generation for this background update
                 const updateGeneration = cacheGeneration;
-                console.log(
+                void debugLog(
                   '[Background] [DEBUG_SEARCH] Starting background cache update (gen',
                   updateGeneration,
                   ')',
@@ -510,7 +511,7 @@ export default defineBackground(() => {
 
                 // Check if cache was cleared while we were fetching
                 if (cacheGeneration !== updateGeneration) {
-                  console.log(
+                  void debugLog(
                     '[Background] [DEBUG_SEARCH] Cache generation changed, skipping stale update',
                   );
                   break;
@@ -522,13 +523,13 @@ export default defineBackground(() => {
 
                 // Final check before saving
                 if (cacheGeneration !== updateGeneration) {
-                  console.log(
+                  void debugLog(
                     '[Background] [DEBUG_SEARCH] Cache generation changed before save, skipping',
                   );
                   break;
                 }
 
-                console.log(
+                void debugLog(
                   '[Background] [DEBUG_SEARCH] Updating cache with fresh results (gen',
                   updateGeneration,
                   ')',
@@ -541,7 +542,7 @@ export default defineBackground(() => {
                   return rest;
                 });
                 if (hasResultsOrderChanged(cachedResultsWithoutDebug, freshResults)) {
-                  console.log(
+                  void debugLog(
                     '[Background] [DEBUG_SEARCH] Results order changed, notifying content script',
                   );
                   // Add debug info to fresh results before sending
@@ -589,7 +590,7 @@ export default defineBackground(() => {
                 const firstResultToCache = getFirstResultToCache(freshResults, currentRepoName);
                 if (firstResultToCache) {
                   await saveFirstResult(firstResultToCache);
-                  console.log(
+                  void debugLog(
                     '[Background] [DEBUG_SEARCH] Updated first result cache:',
                     firstResultToCache.title,
                   );
@@ -703,7 +704,7 @@ export default defineBackground(() => {
               // Save to database
               await savePullRequest(prRecord);
 
-              console.log(`[Background] Fetched and saved PR #${prNumber} for ${owner}/${repo}`);
+              void debugLog(`[Background] Fetched and saved PR #${prNumber} for ${owner}/${repo}`);
               sendResponse({ success: true, data: prRecord });
             } catch (error) {
               console.error(`[Background] Failed to fetch PR #${prNumber}:`, error);
@@ -740,7 +741,7 @@ export default defineBackground(() => {
               // Save to database
               await saveIssue(issueRecord);
 
-              console.log(
+              void debugLog(
                 `[Background] Fetched and saved Issue #${issueNumber} for ${owner}/${repo}`,
               );
               sendResponse({ success: true, data: issueRecord });
