@@ -213,6 +213,7 @@ import {
 import { getUniqueOrganizations, type CategorizedOrganizations } from '@/src/storage/db';
 import { MessageType } from '@/src/messages/types';
 import type { ExtensionMessage } from '@/src/messages/types';
+import { debugLog } from '@/src/utils/debug';
 import {
   startDeviceFlow,
   completeDeviceFlow,
@@ -285,8 +286,8 @@ onMounted(async () => {
   hotkeyPreferences.value = await getHotkeyPreferences();
   customHostsInput.value = hotkeyPreferences.value.customHosts.join(', ');
 
-  console.log('[Options] Loaded hotkey preferences:', hotkeyPreferences.value);
-  console.log('[Options] Custom hosts input:', customHostsInput.value);
+  void debugLog('[Options] Loaded hotkey preferences:', hotkeyPreferences.value);
+  void debugLog('[Options] Custom hosts input:', customHostsInput.value);
 
   // Load organizations and org filter preferences
   if (isAuthenticated.value) {
@@ -309,23 +310,23 @@ onMounted(async () => {
 
   // Load keyboard shortcut
   await loadShortcut();
-  console.log('[Options] After loadShortcut, shortcutKey:', shortcutKey.value);
+  void debugLog('[Options] After loadShortcut, shortcutKey:', shortcutKey.value);
 });
 
 async function loadShortcut() {
   try {
     const commands = await browser.commands.getAll();
-    console.log('[Options] All commands:', commands);
+    void debugLog('[Options] All commands:', commands);
 
     // Find toggle-overlay command specifically (not _execute_action)
     const toggleCommand = commands.find((cmd) => cmd.name === 'toggle-overlay');
-    console.log('[Options] Toggle command:', toggleCommand);
+    void debugLog('[Options] Toggle command:', toggleCommand);
 
     if (toggleCommand?.shortcut) {
       shortcutKey.value = toggleCommand.shortcut;
-      console.log('[Options] Shortcut loaded:', shortcutKey.value);
+      void debugLog('[Options] Shortcut loaded:', shortcutKey.value);
     } else {
-      console.log('[Options] No shortcut found');
+      void debugLog('[Options] No shortcut found');
     }
   } catch (e) {
     console.error('Failed to load shortcut:', e);

@@ -710,7 +710,7 @@ async function loadAllPRsAndIssues() {
   await fetchSearchResults(normalizedSearchQuery.value);
 
   const loadTime = performance.now() - startLoad;
-  console.log(`[CommandPalette] Full results loaded in ${loadTime.toFixed(0)}ms`);
+  debugLogSync(`[CommandPalette] Full results loaded in ${loadTime.toFixed(0)}ms`);
 
   // Build allIssuesByRepo and allPRsByRepo for backward compatibility
   // (used by repoCounts and other UI elements)
@@ -1362,17 +1362,17 @@ async function show() {
 
   if (cachedFirstResult) {
     rawSearchResults.value = [cachedFirstResult, ...skeletons];
-    console.log('[CommandPalette] ⚡ Instant display: cached first result + 15 skeletons');
+    debugLogSync('[CommandPalette] ⚡ Instant display: cached first result + 15 skeletons');
   } else {
     rawSearchResults.value = skeletons;
-    console.log('[CommandPalette] ⚡ Instant display: 15 skeletons (no cached result yet)');
+    debugLogSync('[CommandPalette] ⚡ Instant display: 15 skeletons (no cached result yet)');
   }
 
   // Load cached contributors for instant button display
   const contributors = await loadContributors();
   if (contributors.length > 0) {
     cachedContributors.value = contributors;
-    console.log('[CommandPalette] ⚡ Loaded cached contributors:', contributors.length);
+    debugLogSync('[CommandPalette] ⚡ Loaded cached contributors:', contributors.length);
   }
 
   // Load repos and all PRs/issues (this will fetch full results and replace the cached one)
@@ -1409,13 +1409,13 @@ async function handleCacheUpdate(results: SearchResultItem[] | null) {
 
   // If results provided, use them directly
   if (results && results.length > 0) {
-    console.log('[CommandPalette] Received cache update with', results.length, 'results');
+    debugLogSync('[CommandPalette] Received cache update with', results.length, 'results');
     rawSearchResults.value = results;
     return;
   }
 
   // If no results provided (null), re-fetch from background
-  console.log(
+  debugLogSync(
     '[CommandPalette] Cache invalidated during sync - refreshing repos and search results',
   );
 
@@ -1434,7 +1434,7 @@ function toggleMyContributionsFilter() {
   showOnlyMyContributions.value = !showOnlyMyContributions.value;
   // Save to local storage
   browser.storage.local.set({ showOnlyMyContributions: showOnlyMyContributions.value });
-  console.log('[CommandPalette] My contributions filter:', showOnlyMyContributions.value);
+  debugLogSync('[CommandPalette] My contributions filter:', showOnlyMyContributions.value);
 }
 
 /**
@@ -1444,7 +1444,7 @@ function toggleVisitedFilter() {
   showOnlyVisited.value = !showOnlyVisited.value;
   // Save to local storage
   browser.storage.local.set({ showOnlyVisited: showOnlyVisited.value });
-  console.log('[CommandPalette] Visited filter:', showOnlyVisited.value);
+  debugLogSync('[CommandPalette] Visited filter:', showOnlyVisited.value);
 }
 
 /**

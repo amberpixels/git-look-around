@@ -1,5 +1,6 @@
 import { ref } from 'vue';
 import type { SearchableEntity, SearchResultItem } from './useUnifiedSearch';
+import { debugLog } from '@/src/utils/debug';
 
 const CACHE_KEY = 'git_look_around_search_entities';
 const FIRST_RESULT_KEY = 'git_look_around_first_result';
@@ -75,7 +76,7 @@ export function useSearchCache() {
       }
 
       const parsed = JSON.parse(json);
-      console.log('[SearchCache] Loaded cached first result:', parsed.title);
+      void debugLog('[SearchCache] Loaded cached first result:', parsed.title);
 
       return parsed;
     } catch (e) {
@@ -90,7 +91,7 @@ export function useSearchCache() {
   async function saveFirstResult(result: SearchResultItem | null): Promise<void> {
     try {
       if (result) {
-        console.log('[SearchCache] Saving first result:', result.title);
+        void debugLog('[SearchCache] Saving first result:', result.title);
         const json = JSON.stringify(result);
         await browser.storage.local.set({ [FIRST_RESULT_KEY]: json });
       } else {
@@ -114,7 +115,7 @@ export function useSearchCache() {
       }
 
       const parsed = JSON.parse(json);
-      console.log('[SearchCache] Loaded cached search results:', parsed.length, 'items');
+      void debugLog('[SearchCache] Loaded cached search results:', parsed.length, 'items');
       return parsed;
     } catch (e) {
       console.error('[SearchCache] Failed to load search results cache', e);
@@ -129,7 +130,7 @@ export function useSearchCache() {
     try {
       const json = JSON.stringify(results);
       await browser.storage.local.set({ [RESULTS_CACHE_KEY]: json });
-      console.log('[SearchCache] Saved search results:', results.length, 'items');
+      void debugLog('[SearchCache] Saved search results:', results.length, 'items');
     } catch (e) {
       console.error('[SearchCache] Failed to save search results cache', e);
     }
@@ -148,7 +149,7 @@ export function useSearchCache() {
       }
 
       const parsed = JSON.parse(json);
-      console.log('[SearchCache] Loaded cached contributors:', parsed.length, 'users');
+      void debugLog('[SearchCache] Loaded cached contributors:', parsed.length, 'users');
       return parsed;
     } catch (e) {
       console.error('[SearchCache] Failed to load contributors cache', e);
@@ -163,7 +164,7 @@ export function useSearchCache() {
     try {
       const json = JSON.stringify(contributors);
       await browser.storage.local.set({ [CONTRIBUTORS_KEY]: json });
-      console.log('[SearchCache] Saved contributors:', contributors.length, 'users');
+      void debugLog('[SearchCache] Saved contributors:', contributors.length, 'users');
     } catch (e) {
       console.error('[SearchCache] Failed to save contributors cache', e);
     }
@@ -175,7 +176,7 @@ export function useSearchCache() {
   async function clearSearchResultsCache(): Promise<void> {
     try {
       await browser.storage.local.remove([RESULTS_CACHE_KEY, FIRST_RESULT_KEY]);
-      console.log('[SearchCache] Cleared search results cache');
+      void debugLog('[SearchCache] Cleared search results cache');
     } catch (e) {
       console.error('[SearchCache] Failed to clear search results cache', e);
     }

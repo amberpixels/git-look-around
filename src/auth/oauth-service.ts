@@ -17,6 +17,7 @@ import {
   removeAuthMetadata,
 } from '@/src/storage/chrome';
 import { validateToken } from '@/src/api/github';
+import { debugLog } from '@/src/utils/debug';
 
 export interface DeviceFlowResult {
   success: boolean;
@@ -36,14 +37,14 @@ export interface DeviceFlowResult {
  */
 export async function startDeviceFlow(): Promise<DeviceFlowResult> {
   try {
-    console.log('[Device Flow] Requesting device code...');
+    void debugLog('[Device Flow] Requesting device code...');
 
     const deviceCodeResponse = await requestDeviceCode();
 
-    console.log('[Device Flow] Device code received');
-    console.log('[Device Flow] User code:', deviceCodeResponse.user_code);
-    console.log('[Device Flow] Verification URI:', deviceCodeResponse.verification_uri);
-    console.log('[Device Flow] Expires in:', deviceCodeResponse.expires_in, 'seconds');
+    void debugLog('[Device Flow] Device code received');
+    void debugLog('[Device Flow] User code:', deviceCodeResponse.user_code);
+    void debugLog('[Device Flow] Verification URI:', deviceCodeResponse.verification_uri);
+    void debugLog('[Device Flow] Expires in:', deviceCodeResponse.expires_in, 'seconds');
 
     return {
       success: true,
@@ -83,9 +84,9 @@ export async function completeDeviceFlow(
   const expirationTime = startTime + expiresIn * 1000;
   let pollInterval = interval * 1000; // Convert to milliseconds
 
-  console.log('[Device Flow] Starting to poll for authorization...');
-  console.log('[Device Flow] Poll interval:', interval, 'seconds');
-  console.log('[Device Flow] Expires in:', expiresIn, 'seconds');
+  void debugLog('[Device Flow] Starting to poll for authorization...');
+  void debugLog('[Device Flow] Poll interval:', interval, 'seconds');
+  void debugLog('[Device Flow] Expires in:', expiresIn, 'seconds');
 
   while (Date.now() < expirationTime) {
     try {
@@ -95,7 +96,7 @@ export async function completeDeviceFlow(
 
       // Success - got access token
       if (response.access_token) {
-        console.log('[Device Flow] Access token received!');
+        void debugLog('[Device Flow] Access token received!');
 
         // Save token
         await saveGitHubToken(response.access_token);
@@ -117,7 +118,7 @@ export async function completeDeviceFlow(
           authenticatedAt: Date.now(),
         });
 
-        console.log('[Device Flow] Authentication successful!');
+        void debugLog('[Device Flow] Authentication successful!');
 
         return {
           success: true,
@@ -130,13 +131,13 @@ export async function completeDeviceFlow(
         switch (response.error) {
           case 'authorization_pending':
             // User hasn't authorized yet - continue polling
-            console.log('[Device Flow] Authorization pending, continuing to poll...');
+            void debugLog('[Device Flow] Authorization pending, continuing to poll...');
             break;
 
           case 'slow_down':
             // GitHub wants us to slow down polling
             pollInterval += 5000; // Add 5 seconds to interval
-            console.log(
+            void debugLog(
               '[Device Flow] Slowing down poll interval to:',
               pollInterval / 1000,
               'seconds',
@@ -192,5 +193,5 @@ export async function signOut(): Promise<void> {
   await removeGitHubToken();
   await removeAuthMetadata();
 
-  console.log('[Device Flow] Signed out successfully');
+  void debugLog('[Device Flow] Signed out successfully');
 }
