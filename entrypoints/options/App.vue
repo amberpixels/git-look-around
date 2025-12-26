@@ -22,44 +22,13 @@
           intermediary servers.
         </p>
 
-        <div
+        <AuthUserCard
           v-if="authMethod === 'oauth' && isAuthenticated && !deviceFlowActive"
-          class="oauth-user-card"
-        >
-          <div class="card-header">
-            <div class="user-header">
-              <img
-                v-if="githubUser?.avatar_url"
-                :src="githubUser.avatar_url"
-                class="user-avatar"
-                alt="Avatar"
-              />
-              <div class="user-info">
-                <div class="user-name">
-                  <span class="status-icon">✓</span>
-                  <span class="username">{{ githubUser?.login || 'GitHub User' }}</span>
-                </div>
-                <span class="auth-time"
-                  >Authenticated {{ formatAuthDate(authMetadata?.authenticatedAt) }}</span
-                >
-              </div>
-            </div>
-
-            <div class="scopes-info">
-              <span class="scope-badge">repo</span>
-              <span class="scope-badge">read:user</span>
-              <span class="scope-badge">read:org</span>
-            </div>
-          </div>
-
-          <div v-if="availableOrgs.ownOrgs.length > 0" class="org-info-inline">
-            <span class="org-label">Organizations: ({{ availableOrgs.ownOrgs.length }})</span>
-            {{ getSortedOrgs().slice(0, 20).join(', ')
-            }}<span v-if="availableOrgs.ownOrgs.length > 20"
-              >, +{{ availableOrgs.ownOrgs.length - 20 }} more</span
-            >
-          </div>
-        </div>
+          :user="githubUser"
+          :auth-time="authMetadata?.authenticatedAt"
+          :organizations="getSortedOrgs()"
+          :scopes="['repo', 'read:user', 'read:org']"
+        />
 
         <!-- Device Flow Active State -->
         <div v-if="deviceFlowActive" class="device-flow-container">
@@ -130,42 +99,14 @@
           <li>Generate token, copy and paste below</li>
         </ol>
 
-        <!-- PAT Authenticated Card (matching OAuth style) -->
-        <div v-if="authMethod === 'pat' && isAuthenticated" class="oauth-user-card">
-          <div class="card-header">
-            <div class="user-header">
-              <img
-                v-if="githubUser?.avatar_url"
-                :src="githubUser.avatar_url"
-                class="user-avatar"
-                alt="Avatar"
-              />
-              <div class="user-info">
-                <div class="user-name">
-                  <span class="status-icon">✓</span>
-                  <span class="username">{{ githubUser?.login || 'GitHub User' }}</span>
-                </div>
-                <span class="auth-time"
-                  >Authenticated {{ formatAuthDate(authMetadata?.authenticatedAt) }}</span
-                >
-              </div>
-            </div>
-
-            <div class="scopes-info">
-              <span class="scope-badge">repo</span>
-              <span class="scope-badge">read:user</span>
-              <span class="scope-badge">read:org</span>
-            </div>
-          </div>
-
-          <div v-if="availableOrgs.ownOrgs.length > 0" class="org-info-inline">
-            <span class="org-label">Organizations: ({{ availableOrgs.ownOrgs.length }})</span>
-            {{ getSortedOrgs().slice(0, 20).join(', ')
-            }}<span v-if="availableOrgs.ownOrgs.length > 20"
-              >, +{{ availableOrgs.ownOrgs.length - 20 }} more</span
-            >
-          </div>
-        </div>
+        <!-- PAT Authenticated Card -->
+        <AuthUserCard
+          v-if="authMethod === 'pat' && isAuthenticated"
+          :user="githubUser"
+          :auth-time="authMetadata?.authenticatedAt"
+          :organizations="getSortedOrgs()"
+          :scopes="['repo', 'read:user', 'read:org']"
+        />
 
         <div class="token-form">
           <div v-if="authMethod === 'pat' && isAuthenticated" class="token-display-group">
@@ -202,186 +143,52 @@
       </div>
     </div>
 
-    <div v-if="isAuthenticated" class="section">
-      <h2>Sync (Import) Preferences</h2>
-      <p class="instructions">
-        Choose what data to sync from GitHub (repositories are always synced).
-      </p>
+    <SyncPreferences
+      v-if="isAuthenticated"
+      :preferences="preferences"
+      @update:preferences="preferences = $event"
+      @save="savePreferences"
+    />
 
-      <div class="preferences">
-        <label class="checkbox-label">
-          <input
-            v-model="preferences.importIssues"
-            type="checkbox"
-            class="checkbox"
-            @change="savePreferences"
-          />
-          <span>Sync Issues</span>
-        </label>
-
-        <label class="checkbox-label">
-          <input
-            v-model="preferences.importPullRequests"
-            type="checkbox"
-            class="checkbox"
-            @change="savePreferences"
-          />
-          <span>Sync Pull Requests</span>
-        </label>
-      </div>
-
-      <p v-if="preferencesSaved" class="success small">✓ Preferences saved</p>
-    </div>
-
-    <div
+    <OrganizationFilters
       v-if="
         isAuthenticated &&
         (availableOrgs.ownOrgs.length > 0 || availableOrgs.externalOrgs.length > 0)
       "
-      class="section"
-    >
-      <h2>Organization Filters</h2>
-      <p class="instructions">
-        Choose which organizations to include in search results. Unchecked organizations will be
-        excluded.
-      </p>
+      :own-orgs="availableOrgs.ownOrgs"
+      :external-orgs="availableOrgs.externalOrgs"
+      :filters="orgFilterPreferences"
+      @update:filters="orgFilterPreferences = $event"
+      @save="saveOrgFilters"
+    />
 
-      <div class="org-columns">
-        <!-- Own Organizations -->
-        <div v-if="availableOrgs.ownOrgs.length > 0" class="org-column">
-          <div class="org-category-header">
-            <label class="checkbox-label category-checkbox">
-              <input
-                :checked="allOwnOrgsSelected"
-                type="checkbox"
-                class="checkbox"
-                @change="toggleAllOwnOrgs"
-              />
-              <h3 class="org-category-title">My Organizations</h3>
-            </label>
-          </div>
-          <div class="org-list">
-            <label v-for="org in availableOrgs.ownOrgs" :key="org" class="checkbox-label">
-              <input
-                v-model="orgFilterPreferences.enabledOrgs[org]"
-                type="checkbox"
-                class="checkbox"
-                @change="saveOrgFilters"
-              />
-              <span>{{ org }}</span>
-            </label>
-          </div>
-        </div>
+    <KeyboardShortcut
+      v-if="isAuthenticated"
+      :shortcut-key="shortcutKey"
+      :preferences="hotkeyPreferences"
+      :custom-hosts-input="customHostsInput"
+      @open-shortcut-settings="openShortcutSettings"
+      @update:preferences="hotkeyPreferences = $event"
+      @update:custom-hosts-input="customHostsInput = $event"
+      @save="onModeChange"
+    />
 
-        <!-- External Organizations (from forks) -->
-        <div v-if="availableOrgs.externalOrgs.length > 0" class="org-column">
-          <div class="org-category-header">
-            <label class="checkbox-label category-checkbox">
-              <input
-                :checked="allExternalOrgsSelected"
-                type="checkbox"
-                class="checkbox"
-                @change="toggleAllExternalOrgs"
-              />
-              <h3 class="org-category-title">Other</h3>
-            </label>
-          </div>
-          <div class="org-list">
-            <label v-for="org in availableOrgs.externalOrgs" :key="org" class="checkbox-label">
-              <input
-                v-model="orgFilterPreferences.enabledOrgs[org]"
-                type="checkbox"
-                class="checkbox"
-                @change="saveOrgFilters"
-              />
-              <span>{{ org }}</span>
-            </label>
-          </div>
-        </div>
-      </div>
-
-      <p v-if="orgFilterSaved" class="success small">✓ Organization filters saved</p>
-    </div>
-
-    <div v-if="isAuthenticated" class="section">
-      <h2>Keyboard Shortcut</h2>
-      <p class="instructions">Configure the keyboard shortcut to open GitHub Look-Around.</p>
-
-      <div class="shortcut-info">
-        <div class="shortcut-display">
-          <span v-if="shortcutKey" class="shortcut-key">{{ shortcutKey }}</span>
-          <span v-else class="shortcut-key unset">Not configured</span>
-        </div>
-        <button class="btn-secondary" @click="openShortcutSettings">Configure Shortcut</button>
-      </div>
-
-      <div class="preferences hotkey-mode-section">
-        <p class="instructions">Choose where the hotkey should work:</p>
-
-        <label class="radio-label">
-          <input
-            v-model="hotkeyPreferences.mode"
-            type="radio"
-            value="github-only"
-            class="radio"
-            @change="onModeChange"
-          />
-          <span>Only on GitHub (github.com, gist.github.com)</span>
-        </label>
-
-        <label class="radio-label">
-          <input
-            v-model="hotkeyPreferences.mode"
-            type="radio"
-            value="custom-hosts"
-            class="radio"
-            @change="onModeChange"
-          />
-          <span>Custom websites (specify below)</span>
-        </label>
-
-        <div v-if="hotkeyPreferences.mode === 'custom-hosts'" class="custom-hosts-input">
-          <input
-            v-model="customHostsInput"
-            type="text"
-            placeholder="example.com, *.mycompany.com, jira.company.com"
-            class="text-input"
-            @blur="updateCustomHosts"
-            @keyup.enter="updateCustomHosts"
-          />
-          <p class="hint">
-            Comma-separated list of domains. Use * for wildcards. GitHub domains are always
-            included.
-          </p>
-        </div>
-
-        <p v-if="hotkeyPreferencesSaved" class="warning small">
-          ⚠️ Extension will reload to apply changes...
-        </p>
-        <p v-else-if="hotkeyPreferences.mode === 'custom-hosts'" class="hint">
-          Enter domains and press Enter or click outside to save
-        </p>
-      </div>
-    </div>
-
-    <div v-if="isAuthenticated" class="section">
-      <h2>Developer Settings</h2>
-      <p class="instructions">Developer options for troubleshooting and debugging.</p>
-
-      <div class="preferences">
-        <label class="checkbox-label">
-          <input v-model="debugMode" type="checkbox" class="checkbox" @change="saveDebugModeFlag" />
-          <span>Debug Mode (verbose console logging)</span>
-        </label>
-      </div>
-
-      <p v-if="preferencesSaved" class="success small">✓ Preferences saved</p>
-    </div>
+    <DeveloperSettings
+      v-if="isAuthenticated"
+      :debug-mode="debugMode"
+      @update:debug-mode="debugMode = $event"
+      @save="saveDebugModeFlag"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted } from 'vue';
+import AuthUserCard from '@/src/components/AuthUserCard.vue';
+import SyncPreferences from './components/SyncPreferences.vue';
+import OrganizationFilters from './components/OrganizationFilters.vue';
+import KeyboardShortcut from './components/KeyboardShortcut.vue';
+import DeveloperSettings from './components/DeveloperSettings.vue';
 import {
   saveGitHubToken,
   getGitHubToken,
@@ -615,33 +422,16 @@ async function saveDebugModeFlag() {
   }, 2000);
 }
 
-function updateCustomHosts() {
+async function onModeChange() {
+  // Parse custom hosts from input
   const hosts = customHostsInput.value
     .split(',')
     .map((h) => h.trim())
     .filter((h) => h.length > 0);
 
-  console.log('[Options] Saving custom hosts:', hosts); // Debug log
   hotkeyPreferences.value.customHosts = hosts;
-  saveHotkeyPrefs();
-}
 
-async function onModeChange() {
-  console.log('[Options] Mode changed to:', hotkeyPreferences.value.mode); // Debug log
-
-  // If switching to github-only, save immediately and reload
-  if (hotkeyPreferences.value.mode === 'github-only') {
-    await saveHotkeyPrefs();
-  }
-  // If switching to custom-hosts, just save the mode (not the hosts yet)
-  // Don't reload yet - wait for user to enter domains
-  else if (hotkeyPreferences.value.mode === 'custom-hosts') {
-    // Save mode change without reloading
-    await saveHotkeyPreferences(hotkeyPreferences.value);
-  }
-}
-
-async function saveHotkeyPrefs() {
+  // Save and reload
   await saveHotkeyPreferences(hotkeyPreferences.value);
   hotkeyPreferencesSaved.value = true;
 
@@ -662,39 +452,6 @@ async function saveOrgFilters() {
 }
 
 // Computed: Check if all own orgs are selected
-const allOwnOrgsSelected = computed(() => {
-  if (availableOrgs.value.ownOrgs.length === 0) return false;
-  return availableOrgs.value.ownOrgs.every(
-    (org) => orgFilterPreferences.value.enabledOrgs[org] === true,
-  );
-});
-
-// Computed: Check if all external orgs are selected
-const allExternalOrgsSelected = computed(() => {
-  if (availableOrgs.value.externalOrgs.length === 0) return false;
-  return availableOrgs.value.externalOrgs.every(
-    (org) => orgFilterPreferences.value.enabledOrgs[org] === true,
-  );
-});
-
-// Toggle all own orgs
-function toggleAllOwnOrgs() {
-  const newValue = !allOwnOrgsSelected.value;
-  for (const org of availableOrgs.value.ownOrgs) {
-    orgFilterPreferences.value.enabledOrgs[org] = newValue;
-  }
-  saveOrgFilters();
-}
-
-// Toggle all external orgs
-function toggleAllExternalOrgs() {
-  const newValue = !allExternalOrgsSelected.value;
-  for (const org of availableOrgs.value.externalOrgs) {
-    orgFilterPreferences.value.enabledOrgs[org] = newValue;
-  }
-  saveOrgFilters();
-}
-
 // OAuth Device Flow functions
 async function handleOAuthSignIn() {
   oauthLoading.value = true;
@@ -793,33 +550,6 @@ async function handleSignOut() {
   authMethod.value = null;
   authMetadata.value = null;
   oauthError.value = '';
-}
-
-function formatAuthDate(timestamp: number | undefined): string {
-  if (!timestamp) return '';
-  const now = Date.now();
-  const diff = now - timestamp;
-
-  // Less than 1 hour
-  if (diff < 60 * 60 * 1000) {
-    const minutes = Math.floor(diff / (60 * 1000));
-    return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
-  }
-
-  // Less than 24 hours
-  if (diff < 24 * 60 * 60 * 1000) {
-    const hours = Math.floor(diff / (60 * 60 * 1000));
-    return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
-  }
-
-  // Less than 7 days
-  if (diff < 7 * 24 * 60 * 60 * 1000) {
-    const days = Math.floor(diff / (24 * 60 * 60 * 1000));
-    return `${days} day${days !== 1 ? 's' : ''} ago`;
-  }
-
-  // Fallback: show date
-  return new Date(timestamp).toLocaleDateString();
 }
 
 async function loadGitHubUserInfo() {
@@ -1405,122 +1135,7 @@ h2 {
   font-weight: 600;
 }
 
-/* OAuth User Card */
-.oauth-user-card {
-  background: var(--bg-primary);
-  border: 2px solid #2ea44f;
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 12px;
-}
-
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 12px;
-}
-
-.user-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.user-avatar {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  border: 2px solid var(--border-color);
-}
-
-.user-info {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.user-name {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.status-icon {
-  color: #2ea44f;
-  font-size: 18px;
-}
-
-.username {
-  color: var(--text-primary);
-}
-
-.auth-time {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.org-info-inline {
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--text-primary);
-}
-
-.org-label {
-  color: var(--text-secondary);
-  margin-right: 6px;
-  font-weight: 600;
-}
-
-.scopes-info {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.scope-badge {
-  display: inline-block;
-  padding: 2px 6px;
-  background: #ddf4ff;
-  color: #0969da;
-  border-radius: 3px;
-  font-size: 10px;
-  font-weight: 600;
-  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
-}
-
-.auth-status-display {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 12px;
-}
-
-.status-badge {
-  display: inline-block;
-  padding: 6px 12px;
-  border-radius: 4px;
-  font-size: 14px;
-  font-weight: 600;
-  width: fit-content;
-}
-
-.status-badge.success {
-  background: #d4edda;
-  color: #155724;
-}
-
-.auth-date {
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-
+/* OAuth Actions */
 .oauth-actions {
   display: flex;
   gap: 8px;

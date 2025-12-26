@@ -1,0 +1,39 @@
+/* Styles for GitHub token helper content script */
+
+.git-look-around-banner {
+  background: #0969da;
+  color: white;
+  padding: 16px;
+  margin: 16px 0;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.git-look-around-banner.warning {
+  background: #d29922;
+}
+
+.git-look-around-banner svg {
+  flex-shrink: 0;
+}
+
+.git-look-around-highlight {
+  outline: 3px solid #0969da !important;
+  outline-offset: 4px;
+  border-radius: 6px;
+  animation: pulse-highlight 2s ease-in-out infinite;
+}
+
+@keyframes pulse-highlight {
+  0%,
+  100% {
+    outline-color: #0969da;
+  }
+  50% {
+    outline-color: #54aeff;
+  }
+}
