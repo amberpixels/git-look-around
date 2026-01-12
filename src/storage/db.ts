@@ -193,6 +193,11 @@ export async function getRepo(id: number): Promise<RepoRecord | undefined> {
   return getFromStore<RepoRecord>(STORES.REPOS, id);
 }
 
+export async function getRepoByName(fullName: string): Promise<RepoRecord | undefined> {
+  const allRepos = await getAllRepos();
+  return allRepos.find((r) => r.full_name === fullName);
+}
+
 export async function saveRepo(repo: RepoRecord): Promise<void> {
   return putInStore(STORES.REPOS, repo);
 }

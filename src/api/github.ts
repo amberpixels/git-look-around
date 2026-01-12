@@ -325,10 +325,14 @@ export async function getUserInvolvedPullRequests(
 }
 
 function isUserInvolvedInPR(pr: GitHubPullRequest, username: string): boolean {
-  if (pr.user?.login === username) return true;
-  if (pr.assignee?.login === username) return true;
-  if (pr.assignees?.some((assignee) => assignee.login === username)) return true;
-  if (pr.requested_reviewers?.some((reviewer) => reviewer.login === username)) return true;
+  // Use case-insensitive comparison since GitHub usernames are case-insensitive
+  const usernameLower = username.toLowerCase();
+  if (pr.user?.login.toLowerCase() === usernameLower) return true;
+  if (pr.assignee?.login.toLowerCase() === usernameLower) return true;
+  if (pr.assignees?.some((assignee) => assignee.login.toLowerCase() === usernameLower))
+    return true;
+  if (pr.requested_reviewers?.some((reviewer) => reviewer.login.toLowerCase() === usernameLower))
+    return true;
   return false;
 }
 
@@ -386,9 +390,13 @@ export async function getAllAccessibleRepos(currentUserLogin?: string): Promise<
   const allOrgRepos = orgReposArrays.flat();
 
   // Resolve original repos for personal forks so PRs on upstreams are discoverable
+  // Use case-insensitive comparison since GitHub usernames are case-insensitive
   const personalForks =
     currentUserLogin != null
-      ? userRepos.filter((repo) => repo.fork && repo.owner.login === currentUserLogin)
+      ? userRepos.filter(
+          (repo) =>
+            repo.fork && repo.owner.login.toLowerCase() === currentUserLogin.toLowerCase(),
+        )
       : [];
 
   const forkParents = (
@@ -486,7 +494,11 @@ export async function isUserContributor(
     const contributors = await response.json();
 
     // Check if our username is in the contributors list
-    return contributors.some((contributor: { login: string }) => contributor.login === username);
+    // Use case-insensitive comparison since GitHub usernames are case-insensitive
+    const usernameLower = username.toLowerCase();
+    return contributors.some(
+      (contributor: { login: string }) => contributor.login.toLowerCase() === usernameLower,
+    );
   } catch (error) {
     // If we get a 404 or error, assume not a contributor
     console.warn(`[isUserContributor] Could not check contributors for ${owner}/${repo}:`, error);

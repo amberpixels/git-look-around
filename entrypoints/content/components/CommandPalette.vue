@@ -375,8 +375,8 @@
           </button>
         </div>
 
-        <!-- Non-indexed repos separator and list -->
-        <div v-if="filteredNonIndexedRepos.length > 0" class="non-indexed-section">
+        <!-- Non-indexed repos separator and list (hidden when drilled into a repo) -->
+        <div v-if="filteredNonIndexedRepos.length > 0 && !repoFilter" class="non-indexed-section">
           <div class="non-indexed-separator">Not indexed (click + to add)</div>
           <ul class="results-list non-indexed-repos">
             <li
@@ -798,10 +798,6 @@ const filteredResults = computed(() => {
       if (item.type === 'skeleton') return true;
 
       // Filter by repoId for PRs/issues
-      // But the user is searching *inside* the repo.
-      // Let's exclude the repo item itself to avoid confusion, or maybe include it if it matches?
-      // If I search "fix", I want issues/PRs.
-      // Let's stick to contents.
       return item.repoId === repoFilter.value?.id;
     });
   }

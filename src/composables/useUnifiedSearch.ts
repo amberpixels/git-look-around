@@ -253,10 +253,18 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
 
   function isMyPullRequest(pr: PullRequestRecord, currentUser?: string): boolean {
     if (!currentUser) return false;
-    if (pr.user.login === currentUser) return true;
-    if (pr.assignee?.login === currentUser) return true;
-    if (pr.assignees?.some((assignee) => assignee.login === currentUser)) return true;
-    if (pr.requested_reviewers?.some((reviewer) => reviewer.login === currentUser)) return true;
+    // Use case-insensitive comparison since GitHub usernames are case-insensitive
+    const currentUserLower = currentUser.toLowerCase();
+    if (pr.user.login.toLowerCase() === currentUserLower) return true;
+    if (pr.assignee?.login.toLowerCase() === currentUserLower) return true;
+    if (pr.assignees?.some((assignee) => assignee.login.toLowerCase() === currentUserLower))
+      return true;
+    if (
+      pr.requested_reviewers?.some(
+        (reviewer) => reviewer.login.toLowerCase() === currentUserLower,
+      )
+    )
+      return true;
     return false;
   }
 
@@ -339,7 +347,9 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
           lastVisitedAt: repo.last_visited_at,
           updatedAt: repo.pushed_at ? new Date(repo.pushed_at).getTime() : undefined,
           state: 'open', // Repos are always "open"
-          isMine: currentUser ? repo.owner.login === currentUser : false,
+          isMine: currentUser
+            ? repo.owner.login.toLowerCase() === currentUser.toLowerCase()
+            : false,
           recentlyContributedByMe: isRecent(repo.last_contributed_at),
         });
       }
@@ -401,7 +411,9 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
             lastVisitedAt: issue.last_visited_at,
             updatedAt: new Date(issue.updated_at).getTime(),
             closedAt: issue.closed_at ? new Date(issue.closed_at).getTime() : undefined,
-            isMine: currentUser ? issue.user.login === currentUser : false,
+            isMine: currentUser
+              ? issue.user.login.toLowerCase() === currentUser.toLowerCase()
+              : false,
             recentlyContributedByMe: false, // We don't track per-issue contribution dates yet
           });
         }
