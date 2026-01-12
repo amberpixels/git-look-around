@@ -1,67 +1,11 @@
-import { ref } from 'vue';
-import type { SearchableEntity, SearchResultItem } from './useUnifiedSearch';
+import type { SearchResultItem } from './useUnifiedSearch';
 import { debugLog } from '@/src/utils/debug';
 
-const CACHE_KEY = 'git_look_around_search_entities';
+// Only keep small caches - removed entity and search results caches to avoid quota issues
 const FIRST_RESULT_KEY = 'git_look_around_first_result';
-const RESULTS_CACHE_KEY = 'git_look_around_search_results';
 const CONTRIBUTORS_KEY = 'git_look_around_contributors';
 
 export function useSearchCache() {
-  const cachedString = ref<string | null>(null);
-
-  /**
-   * Load entities from browser storage
-   */
-  async function loadCache(): Promise<SearchableEntity[] | null> {
-    try {
-      const result = await browser.storage.local.get(CACHE_KEY);
-      const json = result[CACHE_KEY] as string | undefined;
-      if (!json) return null;
-
-      cachedString.value = json;
-      return JSON.parse(json);
-    } catch (e) {
-      console.error('[Git Look-Around] Failed to load search cache', e);
-      return null;
-    }
-  }
-
-  /**
-   * Save entities to browser storage
-   * Returns true if data was different from cache (and thus UI should update)
-   * even if saving to storage failed
-   */
-  async function saveCache(entities: SearchableEntity[]): Promise<boolean> {
-    let json: string;
-    try {
-      json = JSON.stringify(entities);
-    } catch (e) {
-      console.error('[Git Look-Around] Failed to stringify entities', e);
-      // If we can't stringify, we can't compare.
-      // Assume it's new data and return true so UI updates.
-      return true;
-    }
-
-    // If data hasn't changed, don't update storage or return true
-    if (json === cachedString.value) {
-      return false;
-    }
-
-    // Update in-memory reference immediately so subsequent checks work
-    cachedString.value = json;
-
-    try {
-      await browser.storage.local.set({ [CACHE_KEY]: json });
-    } catch (e) {
-      console.error('[Git Look-Around] Failed to save search cache (likely quota exceeded)', e);
-      // Return true because data CHANGED, even if we couldn't persist it
-      return true;
-    }
-
-    return true;
-  }
-
   /**
    * Load the cached first result (most recently visited item)
    * This is used for instant display when opening the palette
@@ -103,40 +47,6 @@ export function useSearchCache() {
   }
 
   /**
-   * Load cached search results (full processed list)
-   */
-  async function loadSearchResults(): Promise<SearchResultItem[] | null> {
-    try {
-      const result = await browser.storage.local.get(RESULTS_CACHE_KEY);
-      const json = result[RESULTS_CACHE_KEY] as string | undefined;
-
-      if (!json) {
-        return null;
-      }
-
-      const parsed = JSON.parse(json);
-      void debugLog('[SearchCache] Loaded cached search results:', parsed.length, 'items');
-      return parsed;
-    } catch (e) {
-      console.error('[SearchCache] Failed to load search results cache', e);
-      return null;
-    }
-  }
-
-  /**
-   * Save search results to cache
-   */
-  async function saveSearchResults(results: SearchResultItem[]): Promise<void> {
-    try {
-      const json = JSON.stringify(results);
-      await browser.storage.local.set({ [RESULTS_CACHE_KEY]: json });
-      void debugLog('[SearchCache] Saved search results:', results.length, 'items');
-    } catch (e) {
-      console.error('[SearchCache] Failed to save search results cache', e);
-    }
-  }
-
-  /**
    * Load cached contributors (top 2 other users)
    */
   async function loadContributors(): Promise<string[]> {
@@ -171,26 +81,22 @@ export function useSearchCache() {
   }
 
   /**
-   * Clear search results cache (e.g., after a visit is recorded)
+   * Clear first result cache (e.g., after a visit is recorded)
    */
-  async function clearSearchResultsCache(): Promise<void> {
+  async function clearFirstResultCache(): Promise<void> {
     try {
-      await browser.storage.local.remove([RESULTS_CACHE_KEY, FIRST_RESULT_KEY]);
-      void debugLog('[SearchCache] Cleared search results cache');
+      await browser.storage.local.remove(FIRST_RESULT_KEY);
+      void debugLog('[SearchCache] Cleared first result cache');
     } catch (e) {
-      console.error('[SearchCache] Failed to clear search results cache', e);
+      console.error('[SearchCache] Failed to clear first result cache', e);
     }
   }
 
   return {
-    loadCache,
-    saveCache,
     loadFirstResult,
     saveFirstResult,
-    loadSearchResults,
-    saveSearchResults,
     loadContributors,
     saveContributors,
-    clearSearchResultsCache,
+    clearFirstResultCache,
   };
 }

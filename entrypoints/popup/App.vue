@@ -188,8 +188,7 @@ async function detectCurrentRepo() {
 
 async function triggerSync(repoName?: string) {
   try {
-    // For now, both "Sync Everything" and "Sync Repo X" call the same FORCE_IMPORT
-    // In the future, we can add a new message type for single-repo sync
+    // If repoName is provided, syncs only that repo; otherwise syncs all repos
     await browser.runtime.sendMessage({
       type: MessageType.FORCE_IMPORT,
       payload: repoName ? { repoName } : undefined,

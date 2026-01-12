@@ -20,6 +20,9 @@ import {
   getMeta,
   setMeta,
   getRepo,
+  getRepoByName,
+  getIssuesByRepo,
+  getPullRequestsByRepo,
 } from '@/src/storage/db';
 
 import { getImportPreferences } from '@/src/storage/chrome';
@@ -266,7 +269,10 @@ export async function runImport(onProgress?: ImportProgressCallback): Promise<vo
         const indexedManually = existingRepo?.indexed_manually || false;
 
         // Check if user owns this repo (personal repos)
-        const isOwnedByMe = accountLogin ? repo.owner.login === accountLogin : false;
+        // Use case-insensitive comparison since GitHub usernames are case-insensitive
+        const isOwnedByMe = accountLogin
+          ? repo.owner.login.toLowerCase() === accountLogin.toLowerCase()
+          : false;
         const isParentOfMyFork = forkParentRepoIds.has(repo.id);
 
         // Determine if this is a "repo of interest"
@@ -310,7 +316,8 @@ export async function runImport(onProgress?: ImportProgressCallback): Promise<vo
         const getOrgCategory = (repo: typeof a): number => {
           const owner = repo.full_name.split('/')[0];
           // Personal repos (owner === current user): priority 0
-          if (accountLogin && owner === accountLogin) return 0;
+          // Use case-insensitive comparison since GitHub usernames are case-insensitive
+          if (accountLogin && owner.toLowerCase() === accountLogin.toLowerCase()) return 0;
           // Own orgs (NOT fork parents): priority 1
           if (!repo.is_parent_of_my_fork) return 1;
           // External orgs (fork parents only): priority 2
@@ -583,6 +590,161 @@ export async function forceImport(onProgress?: ImportProgressCallback): Promise<
   });
 
   return runImport(onProgress);
+}
+
+/**
+ * Force sync a single repo (issues and PRs only)
+ * Used when user clicks "Force resync {repo-name}"
+ */
+export async function forceSyncSingleRepo(
+  repoFullName: string,
+  onProgress?: ImportProgressCallback,
+): Promise<void> {
+  console.warn(`[Import] Force sync single repo: ${repoFullName}`);
+
+  // Look up repo by name
+  const repo = await getRepoByName(repoFullName);
+  if (!repo) {
+    console.error(`[Import] Repo not found: ${repoFullName}`);
+    throw new Error(`Repo not found: ${repoFullName}`);
+  }
+
+  // Get preferences and user info
+  const preferences = await getImportPreferences();
+  const user = await getAuthenticatedUser();
+  const accountLogin = user.login || null;
+
+  // Update status to show single-repo sync
+  await updateImportStatus({
+    isRunning: true,
+    lastStartedAt: Date.now(),
+    lastError: null,
+    progress: {
+      totalRepos: 1,
+      indexedRepos: 1,
+      nonIndexedRepos: 0,
+      issuesProgress: 0,
+      prsProgress: 0,
+      currentRepo: repoFullName,
+    },
+  });
+
+  if (onProgress) {
+    onProgress('repo_processed');
+  }
+
+  try {
+    const [owner, repoName] = repoFullName.split('/');
+    const shouldLimitToMyPRs = !!(repo.prs_only_my_involvement && accountLogin);
+
+    // Fetch issues if enabled
+    if (preferences.importIssues) {
+      try {
+        const issues = await getRepoIssues(owner, repoName, 'all');
+
+        // Get existing issues to preserve visit tracking
+        const existingIssues = await getIssuesByRepo(repo.id);
+        const existingIssuesMap = new Map(existingIssues.map((i) => [i.id, i]));
+
+        const issueRecords: IssueRecord[] = issues.map((issue) => {
+          const existing = existingIssuesMap.get(issue.id);
+          return {
+            ...issue,
+            repo_id: repo.id,
+            last_fetched_at: Date.now(),
+            visit_count: existing?.visit_count,
+            last_visited_at: existing?.last_visited_at,
+            first_visited_at: existing?.first_visited_at,
+          };
+        });
+
+        await saveIssues(issueRecords);
+        console.warn(`[Import] ✓ ${repoFullName}: ${issues.length} issues`);
+
+        await updateImportStatus({
+          progress: {
+            totalRepos: 1,
+            indexedRepos: 1,
+            nonIndexedRepos: 0,
+            issuesProgress: 1,
+            prsProgress: 0,
+            currentRepo: repoFullName,
+          },
+        });
+
+        if (onProgress) {
+          onProgress('repo_processed');
+        }
+      } catch (err) {
+        console.error(`[Import] ✗ Failed to fetch issues for ${repoFullName}:`, err);
+      }
+    }
+
+    // Fetch PRs if enabled
+    if (preferences.importPullRequests) {
+      try {
+        const prs = shouldLimitToMyPRs
+          ? await getUserInvolvedPullRequests(owner, repoName, accountLogin!)
+          : await getRepoPullRequests(owner, repoName);
+
+        // Get existing PRs to preserve visit tracking
+        const existingPRs = await getPullRequestsByRepo(repo.id);
+        const existingPRsMap = new Map(existingPRs.map((pr) => [pr.id, pr]));
+
+        const prRecords: PullRequestRecord[] = prs.map((pr) => {
+          const existing = existingPRsMap.get(pr.id);
+          return {
+            ...pr,
+            merged: pr.merged_at !== null,
+            repo_id: repo.id,
+            last_fetched_at: Date.now(),
+            visit_count: existing?.visit_count,
+            last_visited_at: existing?.last_visited_at,
+            first_visited_at: existing?.first_visited_at,
+          };
+        });
+
+        await savePullRequests(prRecords);
+        console.warn(`[Import] ✓ ${repoFullName}: ${prs.length} PRs`);
+
+        await updateImportStatus({
+          progress: {
+            totalRepos: 1,
+            indexedRepos: 1,
+            nonIndexedRepos: 0,
+            issuesProgress: preferences.importIssues ? 1 : 0,
+            prsProgress: 1,
+            currentRepo: repoFullName,
+          },
+        });
+
+        if (onProgress) {
+          onProgress('repo_processed');
+        }
+      } catch (err) {
+        console.error(`[Import] ✗ Failed to fetch PRs for ${repoFullName}:`, err);
+      }
+    }
+
+    // Mark complete
+    await updateImportStatus({
+      isRunning: false,
+      lastCompletedAt: Date.now(),
+      lastError: null,
+    });
+
+    console.warn(`[Import] Single repo sync completed: ${repoFullName}`);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`[Import] Single repo sync failed for ${repoFullName}:`, error);
+
+    await updateImportStatus({
+      isRunning: false,
+      lastError: errorMessage,
+    });
+
+    throw error;
+  }
 }
 
 /**
