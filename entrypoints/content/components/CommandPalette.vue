@@ -644,13 +644,17 @@ const isDebugMode = ref(false);
 onMounted(async () => {
   isDebugMode.value = await getDebugMode();
 });
-const { loadFirstResult, loadContributors } = useSearchCache();
+const { loadFirstResult, loadSecondResult, loadContributors } = useSearchCache();
 
 // Pass current username (reactive) for authorship-based sorting
 const currentUsername = computed(() => syncStatus.value?.accountLogin || undefined);
 
 // Store search results from background
 const rawSearchResults = ref<SearchResultItem[]>([]);
+
+// INSTANT NAVIGATION: Pre-load cached first and second results for zero-delay Enter key
+const preloadedFirstResult = ref<SearchResultItem | null>(null);
+const preloadedSecondResult = ref<SearchResultItem | null>(null);
 
 /**
  * Fetch search results from background
@@ -875,6 +879,21 @@ function getCurrentRepoFromUrl(): string | null {
 }
 
 /**
+ * Check if a search result item is for the current repo
+ */
+function isResultCurrentRepo(
+  result: SearchResultItem | null,
+  currentRepoName: string | null,
+): boolean {
+  return !!(
+    result &&
+    currentRepoName &&
+    ((result.type === 'repo' && result.title === currentRepoName) ||
+      (result.type !== 'repo' && result.repoName === currentRepoName))
+  );
+}
+
+/**
  * Apply quick-switcher logic: deprioritize or hide current repo
  */
 function applyQuickSwitcherLogic(results: SearchResultItem[]): SearchResultItem[] {
@@ -973,8 +992,38 @@ function movePrev() {
  * Navigate to focused item
  */
 function navigateToFocusedItem(newTab: boolean = false) {
-  const item = visibleResults.value[focusedIndex.value];
-  if (!item) return;
+  let item = visibleResults.value[focusedIndex.value];
+
+  // INSTANT NAVIGATION: If results haven't loaded yet (item is missing/skeleton)
+  // and we're at first result with empty query, use pre-loaded cached result
+  // Apply quick-switcher logic: if first is current repo, use second instead
+  if (
+    (!item || item.type === 'skeleton') &&
+    focusedIndex.value === 0 &&
+    !searchQuery.value.trim() &&
+    (preloadedFirstResult.value || preloadedSecondResult.value)
+  ) {
+    const currentRepoName = getCurrentRepoFromUrl();
+
+    // Choose correct result: if first is current repo, use second
+    if (
+      preloadedFirstResult.value &&
+      !isResultCurrentRepo(preloadedFirstResult.value, currentRepoName)
+    ) {
+      debugLogSync('[CommandPalette] ⚡ Using pre-loaded first result for instant navigation');
+      item = preloadedFirstResult.value;
+    } else if (
+      preloadedSecondResult.value &&
+      !isResultCurrentRepo(preloadedSecondResult.value, currentRepoName)
+    ) {
+      debugLogSync('[CommandPalette] ⚡ Using pre-loaded second result for instant navigation');
+      item = preloadedSecondResult.value;
+    } else {
+      debugLogSync('[CommandPalette] ⚡ No valid pre-loaded result - waiting for real results');
+    }
+  }
+
+  if (!item || item.type === 'skeleton') return;
 
   if (newTab) {
     // Create a temporary anchor element to simulate Cmd+Click behavior
@@ -1357,18 +1406,32 @@ async function show() {
   repoFilter.value = null;
   sendMessage(MessageType.SET_QUICK_CHECK_BROWSING);
 
-  // INSTANT DISPLAY: Load cached first result immediately for zero-delay UX
-  const cachedFirstResult = await loadFirstResult();
-
-  // Always show skeletons to prevent "Not indexed" section from jumping
+  // INSTANT DISPLAY: Use pre-loaded cached result (already in memory - zero delay!)
+  // Apply quick-switcher logic: if first is current repo, use second instead
   const skeletons = createSkeletonItems(15);
+  const currentRepoName = getCurrentRepoFromUrl();
 
-  if (cachedFirstResult) {
-    rawSearchResults.value = [cachedFirstResult, ...skeletons];
-    debugLogSync('[CommandPalette] ⚡ Instant display: cached first result + 15 skeletons');
+  // Choose correct result: if first is current repo, use second
+  let resultToShow: SearchResultItem | null = null;
+  if (
+    preloadedFirstResult.value &&
+    !isResultCurrentRepo(preloadedFirstResult.value, currentRepoName)
+  ) {
+    resultToShow = preloadedFirstResult.value;
+    debugLogSync('[CommandPalette] ⚡ Instant display: first result');
+  } else if (
+    preloadedSecondResult.value &&
+    !isResultCurrentRepo(preloadedSecondResult.value, currentRepoName)
+  ) {
+    resultToShow = preloadedSecondResult.value;
+    debugLogSync('[CommandPalette] ⚡ Instant display: second result (first was current repo)');
+  }
+
+  if (resultToShow) {
+    rawSearchResults.value = [resultToShow, ...skeletons];
   } else {
     rawSearchResults.value = skeletons;
-    debugLogSync('[CommandPalette] ⚡ Instant display: 15 skeletons (no cached result yet)');
+    debugLogSync('[CommandPalette] ⚡ Instant display: skeletons only (no valid cached result)');
   }
 
   // Load cached contributors for instant button display
@@ -1407,6 +1470,22 @@ async function toggle() {
  * Only update UI if palette is currently open and showing results
  */
 async function handleCacheUpdate(results: SearchResultItem[] | null) {
+  // INSTANT NAVIGATION: Reload pre-loaded first and second results (for next time palette opens)
+  preloadedFirstResult.value = await loadFirstResult();
+  preloadedSecondResult.value = await loadSecondResult();
+  if (preloadedFirstResult.value) {
+    debugLogSync(
+      '[CommandPalette] ⚡ Updated pre-loaded first result:',
+      preloadedFirstResult.value.title,
+    );
+  }
+  if (preloadedSecondResult.value) {
+    debugLogSync(
+      '[CommandPalette] ⚡ Updated pre-loaded second result:',
+      preloadedSecondResult.value.title,
+    );
+  }
+
   // Only update if palette is open
   if (panelMode.value === 'HIDDEN') return;
 
@@ -1614,6 +1693,16 @@ onMounted(async () => {
   const cachedTheme = await getCachedTheme();
   if (cachedTheme) {
     isDarkTheme.value = cachedTheme === 'dark';
+  }
+
+  // INSTANT NAVIGATION: Pre-load cached first and second results for zero-delay Enter key
+  preloadedFirstResult.value = await loadFirstResult();
+  preloadedSecondResult.value = await loadSecondResult();
+  if (preloadedFirstResult.value) {
+    debugLogSync('[CommandPalette] ⚡ Pre-loaded first result:', preloadedFirstResult.value.title);
+  }
+  if (preloadedSecondResult.value) {
+    debugLogSync('[CommandPalette] ⚡ Pre-loaded second result:', preloadedSecondResult.value.title);
   }
 
   // Load filter preferences from storage
