@@ -977,7 +977,14 @@ function navigateToFocusedItem(newTab: boolean = false) {
   if (!item) return;
 
   if (newTab) {
-    window.open(item.url, '_blank');
+    // Create a temporary anchor element to simulate Cmd+Click behavior
+    const link = document.createElement('a');
+    link.href = item.url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   } else {
     window.location.href = item.url;
     hide();

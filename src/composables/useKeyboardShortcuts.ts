@@ -103,10 +103,15 @@ export function useKeyboardShortcuts(actions: KeyboardActions, isVisible: () => 
     }
 
     if (e.key === 'Enter') {
-      debugLogSync('[Git Look-Around] Shortcut: Enter');
+      const newTab = e.metaKey || e.ctrlKey || e.shiftKey;
+      debugLogSync('[Git Look-Around] Shortcut: Enter', {
+        newTab,
+        metaKey: e.metaKey,
+        ctrlKey: e.ctrlKey,
+        shiftKey: e.shiftKey,
+      });
       e.preventDefault();
       e.stopPropagation();
-      const newTab = e.metaKey || e.ctrlKey;
       actions.select(newTab);
       return;
     }
