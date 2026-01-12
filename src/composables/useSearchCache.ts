@@ -3,6 +3,7 @@ import { debugLog } from '@/src/utils/debug';
 
 // Only keep small caches - removed entity and search results caches to avoid quota issues
 const FIRST_RESULT_KEY = 'git_look_around_first_result';
+const SECOND_RESULT_KEY = 'git_look_around_second_result';
 const CONTRIBUTORS_KEY = 'git_look_around_contributors';
 
 export function useSearchCache() {
@@ -81,12 +82,52 @@ export function useSearchCache() {
   }
 
   /**
+   * Load the cached second result (for quick-switcher when first is current repo)
+   */
+  async function loadSecondResult(): Promise<SearchResultItem | null> {
+    try {
+      const result = await browser.storage.local.get(SECOND_RESULT_KEY);
+      const json = result[SECOND_RESULT_KEY] as string | undefined;
+
+      if (!json) {
+        return null;
+      }
+
+      const parsed = JSON.parse(json);
+      void debugLog('[SearchCache] Loaded cached second result:', parsed.title);
+
+      return parsed;
+    } catch (e) {
+      console.error('[SearchCache] Failed to load second result cache', e);
+      return null;
+    }
+  }
+
+  /**
+   * Save the second result to cache
+   */
+  async function saveSecondResult(result: SearchResultItem | null): Promise<void> {
+    try {
+      if (result) {
+        void debugLog('[SearchCache] Saving second result:', result.title);
+        const json = JSON.stringify(result);
+        await browser.storage.local.set({ [SECOND_RESULT_KEY]: json });
+      } else {
+        await browser.storage.local.remove(SECOND_RESULT_KEY);
+      }
+    } catch (e) {
+      console.error('[SearchCache] Failed to save second result cache', e);
+    }
+  }
+
+  /**
    * Clear first result cache (e.g., after a visit is recorded)
    */
   async function clearFirstResultCache(): Promise<void> {
     try {
       await browser.storage.local.remove(FIRST_RESULT_KEY);
-      void debugLog('[SearchCache] Cleared first result cache');
+      await browser.storage.local.remove(SECOND_RESULT_KEY);
+      void debugLog('[SearchCache] Cleared first and second result cache');
     } catch (e) {
       console.error('[SearchCache] Failed to clear first result cache', e);
     }
@@ -95,6 +136,8 @@ export function useSearchCache() {
   return {
     loadFirstResult,
     saveFirstResult,
+    loadSecondResult,
+    saveSecondResult,
     loadContributors,
     saveContributors,
     clearFirstResultCache,

@@ -260,9 +260,7 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
     if (pr.assignees?.some((assignee) => assignee.login.toLowerCase() === currentUserLower))
       return true;
     if (
-      pr.requested_reviewers?.some(
-        (reviewer) => reviewer.login.toLowerCase() === currentUserLower,
-      )
+      pr.requested_reviewers?.some((reviewer) => reviewer.login.toLowerCase() === currentUserLower)
     )
       return true;
     return false;

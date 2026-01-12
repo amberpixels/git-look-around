@@ -329,8 +329,7 @@ function isUserInvolvedInPR(pr: GitHubPullRequest, username: string): boolean {
   const usernameLower = username.toLowerCase();
   if (pr.user?.login.toLowerCase() === usernameLower) return true;
   if (pr.assignee?.login.toLowerCase() === usernameLower) return true;
-  if (pr.assignees?.some((assignee) => assignee.login.toLowerCase() === usernameLower))
-    return true;
+  if (pr.assignees?.some((assignee) => assignee.login.toLowerCase() === usernameLower)) return true;
   if (pr.requested_reviewers?.some((reviewer) => reviewer.login.toLowerCase() === usernameLower))
     return true;
   return false;
@@ -394,8 +393,7 @@ export async function getAllAccessibleRepos(currentUserLogin?: string): Promise<
   const personalForks =
     currentUserLogin != null
       ? userRepos.filter(
-          (repo) =>
-            repo.fork && repo.owner.login.toLowerCase() === currentUserLogin.toLowerCase(),
+          (repo) => repo.fork && repo.owner.login.toLowerCase() === currentUserLogin.toLowerCase(),
         )
       : [];
 
