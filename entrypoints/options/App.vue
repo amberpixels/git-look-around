@@ -18,8 +18,10 @@
       <div v-if="!isAuthenticated || authMethod === 'oauth'" class="auth-method-section">
         <h3 v-if="!isAuthenticated">Recommended: Sign in with GitHub</h3>
         <p v-if="!isAuthenticated" class="instructions">
-          Secure authentication using GitHub Device Flow. Direct communication with GitHub - no
-          intermediary servers.
+          One-click sign in - no tokens to create or manage. Just authorize and you're done.
+        </p>
+        <p v-if="!isAuthenticated" class="auth-note">
+          For organizations you don't own, the org admin may need to approve this app first.
         </p>
 
         <AuthUserCard
@@ -86,7 +88,7 @@
 
       <!-- PAT Section -->
       <div v-if="!isAuthenticated || authMethod === 'pat'" class="auth-method-section">
-        <h3 v-if="!isAuthenticated">Advanced: Personal Access Token</h3>
+        <h3 v-if="!isAuthenticated">Personal Access Token (PAT)</h3>
         <ol v-if="!isAuthenticated" class="pat-instructions">
           <li>
             <a
@@ -651,6 +653,23 @@ h2 {
 .instructions {
   margin-bottom: 8px;
   color: var(--text-secondary);
+}
+
+.auth-note {
+  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin: 8px 0 12px 0;
+  background: rgba(212, 167, 44, 0.1);
+  border: 1px solid rgba(212, 167, 44, 0.3);
+  color: #b08800;
+}
+
+/* Dark mode adjustments */
+@media (prefers-color-scheme: dark) {
+  .auth-note {
+    color: #e3b341;
+  }
 }
 
 .pat-instructions {
