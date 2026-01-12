@@ -24,35 +24,6 @@ import { useSearchCache } from '@/src/composables/useSearchCache';
 import { debugLog } from '@/src/utils/debug';
 
 /**
- * Determine which result should be cached as "first result"
- * Takes into account quick-switcher logic that swaps current repo
- */
-function getFirstResultToCache(
-  results: SearchResultItem[],
-  currentRepoName: string | null | undefined,
-): SearchResultItem | null {
-  if (results.length === 0) return null;
-  if (!currentRepoName) return results[0];
-
-  // Check if first result is the current repo (will be swapped)
-  const first = results[0];
-  const isCurrentRepo =
-    (first.type === 'repo' && first.title === currentRepoName) ||
-    (first.type !== 'repo' && first.repoName === currentRepoName);
-
-  // If first result is current repo and we have a second result, cache the second
-  if (isCurrentRepo && results.length >= 2) {
-    void debugLog(
-      '[Background] First result is current repo, caching second result instead:',
-      results[1].title,
-    );
-    return results[1];
-  }
-
-  return results[0];
-}
-
-/**
  * Extract top 2 contributors (besides current user) from results
  */
 function extractContributors(
@@ -81,11 +52,9 @@ function extractContributors(
 export default defineBackground(() => {
   console.warn('[Background] Git Look-Around background initialized', { id: browser.runtime.id });
 
-  // Cache generation counter to prevent stale updates
-  let cacheGeneration = 0;
-
-  // Initialize search cache (only small caches - first result and contributors)
-  const { saveFirstResult, saveContributors, clearFirstResultCache } = useSearchCache();
+  // Initialize search cache (only small caches - first/second result and contributors)
+  const { saveFirstResult, saveSecondResult, saveContributors, clearFirstResultCache } =
+    useSearchCache();
 
   // Throttle for sync progress updates (max once per 2 seconds)
   let lastSyncProgressUpdate = 0;
@@ -108,7 +77,6 @@ export default defineBackground(() => {
 
     // Clear first result cache (small cache for instant display)
     await clearFirstResultCache();
-    cacheGeneration++;
 
     // Notify all tabs to refresh (without sending results - let them re-fetch)
     browser.tabs.query({}).then((tabs) => {
@@ -236,9 +204,8 @@ export default defineBackground(() => {
               entityId: number;
             };
             await recordVisit(type, entityId);
-            // Clear first result cache and bump generation
+            // Clear first result cache
             await clearFirstResultCache();
-            cacheGeneration++;
             sendResponse({ success: true });
             break;
           }
@@ -266,7 +233,11 @@ export default defineBackground(() => {
           }
 
           case MessageType.SEARCH: {
-            const { query, currentUsername, currentRepoName } = message.payload as {
+            const {
+              query,
+              currentUsername,
+              currentRepoName: _currentRepoName,
+            } = message.payload as {
               query: string;
               currentUsername?: string;
               currentRepoName?: string | null;
@@ -292,10 +263,13 @@ export default defineBackground(() => {
             const results = searchResults.value(query);
 
             // Save small caches for instant display (only for empty query)
+            // Cache top 2 results (for quick-switcher - frontend chooses based on current repo)
             if (!query && results.length > 0) {
-              const firstResultToCache = getFirstResultToCache(results, currentRepoName);
-              if (firstResultToCache) {
-                await saveFirstResult(firstResultToCache);
+              if (results[0]) {
+                await saveFirstResult(results[0]);
+              }
+              if (results[1]) {
+                await saveSecondResult(results[1]);
               }
               const contributors = extractContributors(results, currentUsername);
               await saveContributors(contributors);
@@ -306,7 +280,11 @@ export default defineBackground(() => {
           }
 
           case MessageType.DEBUG_SEARCH: {
-            const { query, currentUsername, currentRepoName } = message.payload as {
+            const {
+              query,
+              currentUsername,
+              currentRepoName: _currentRepoName,
+            } = message.payload as {
               query: string;
               currentUsername?: string;
               currentRepoName?: string | null;
@@ -332,10 +310,13 @@ export default defineBackground(() => {
             const results = searchResults.value(query);
 
             // Save small caches for instant display (only for empty query)
+            // Cache top 2 results (for quick-switcher - frontend chooses based on current repo)
             if (!query && results.length > 0) {
-              const firstResultToCache = getFirstResultToCache(results, currentRepoName);
-              if (firstResultToCache) {
-                await saveFirstResult(firstResultToCache);
+              if (results[0]) {
+                await saveFirstResult(results[0]);
+              }
+              if (results[1]) {
+                await saveSecondResult(results[1]);
               }
               const contributors = extractContributors(results, currentUsername);
               await saveContributors(contributors);
