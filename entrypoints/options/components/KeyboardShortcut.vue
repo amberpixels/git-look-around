@@ -39,29 +39,22 @@
       </label>
 
       <div v-if="localPreferences.mode === 'custom-hosts'" class="custom-hosts-input">
-        <input
-          v-model="localCustomHosts"
-          type="text"
-          placeholder="example.com, *.mycompany.com, jira.company.com"
-          class="text-input"
-          @blur="updateCustomHosts"
-          @keyup.enter="updateCustomHosts"
+        <TagInput
+          v-model="localPreferences.customHosts"
+          placeholder="Type a domain and press Enter (e.g. example.com, *.mycompany.com)"
+          hint="Use * for wildcards. GitHub domains are always included."
+          @change="updateCustomHosts"
         />
-        <p class="hint">
-          Comma-separated list of domains. Use * for wildcards. GitHub domains are always included.
-        </p>
       </div>
 
       <p v-if="saved" class="warning small">⚠️ Extension will reload to apply changes...</p>
-      <p v-else-if="localPreferences.mode === 'custom-hosts'" class="hint">
-        Enter domains and press Enter or click outside to save
-      </p>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, watch } from 'vue';
+import TagInput from '@/src/components/TagInput.vue';
 
 interface HotkeyPreferences {
   mode: 'github-only' | 'custom-hosts';
@@ -71,13 +64,11 @@ interface HotkeyPreferences {
 interface Props {
   shortcutKey: string;
   preferences: HotkeyPreferences;
-  customHostsInput: string;
 }
 
 interface Emits {
   (e: 'openShortcutSettings'): void;
   (e: 'update:preferences', value: HotkeyPreferences): void;
-  (e: 'update:customHostsInput', value: string): void;
   (e: 'save'): void;
 }
 
@@ -85,7 +76,6 @@ const props = defineProps<Props>();
 const emit = defineEmits<Emits>();
 
 const localPreferences = ref<HotkeyPreferences>({ ...props.preferences });
-const localCustomHosts = ref(props.customHostsInput);
 const saved = ref(false);
 
 watch(
@@ -96,13 +86,6 @@ watch(
   { deep: true },
 );
 
-watch(
-  () => props.customHostsInput,
-  (newValue) => {
-    localCustomHosts.value = newValue;
-  },
-);
-
 function handleModeChange() {
   emit('update:preferences', localPreferences.value);
   emit('save');
@@ -110,7 +93,7 @@ function handleModeChange() {
 }
 
 function updateCustomHosts() {
-  emit('update:customHostsInput', localCustomHosts.value);
+  emit('update:preferences', localPreferences.value);
   emit('save');
   showSavedMessage();
 }
@@ -203,27 +186,6 @@ function showSavedMessage() {
 .custom-hosts-input {
   margin-left: 26px;
   margin-top: 8px;
-}
-
-.text-input {
-  width: 100%;
-  padding: 8px 12px;
-  font-size: 14px;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-}
-
-.text-input:focus {
-  outline: none;
-  border-color: var(--link-color);
-}
-
-.hint {
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--text-secondary);
 }
 
 .warning {
