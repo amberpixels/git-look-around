@@ -168,10 +168,8 @@
       v-if="isAuthenticated"
       :shortcut-key="shortcutKey"
       :preferences="hotkeyPreferences"
-      :custom-hosts-input="customHostsInput"
       @open-shortcut-settings="openShortcutSettings"
       @update:preferences="hotkeyPreferences = $event"
-      @update:custom-hosts-input="customHostsInput = $event"
       @save="onModeChange"
     />
 
@@ -239,7 +237,7 @@ const hotkeyPreferences = ref<HotkeyPreferences>({
   customHosts: [],
 });
 const hotkeyPreferencesSaved = ref(false);
-const customHostsInput = ref('');
+const reloadTimeoutId = ref<number | null>(null);
 const availableOrgs = ref<CategorizedOrganizations>({
   ownOrgs: [],
   externalOrgs: [],
@@ -286,10 +284,8 @@ onMounted(async () => {
   preferences.value = await getImportPreferences();
   debugMode.value = await getDebugMode();
   hotkeyPreferences.value = await getHotkeyPreferences();
-  customHostsInput.value = hotkeyPreferences.value.customHosts.join(', ');
 
   void debugLog('[Options] Loaded hotkey preferences:', hotkeyPreferences.value);
-  void debugLog('[Options] Custom hosts input:', customHostsInput.value);
 
   // Load organizations and org filter preferences
   if (isAuthenticated.value) {
@@ -426,22 +422,20 @@ async function saveDebugModeFlag() {
 }
 
 async function onModeChange() {
-  // Parse custom hosts from input
-  const hosts = customHostsInput.value
-    .split(',')
-    .map((h) => h.trim())
-    .filter((h) => h.length > 0);
-
-  hotkeyPreferences.value.customHosts = hosts;
-
-  // Save and reload
+  // Save preferences
   await saveHotkeyPreferences(hotkeyPreferences.value);
   hotkeyPreferencesSaved.value = true;
 
-  // Reload extension to apply changes
-  window.setTimeout(() => {
+  // Cancel any previous reload timeout
+  if (reloadTimeoutId.value !== null) {
+    window.clearTimeout(reloadTimeoutId.value);
+  }
+
+  // Schedule extension reload to apply changes
+  // Give it 1.5 seconds to ensure the save completes
+  reloadTimeoutId.value = window.setTimeout(() => {
     browser.runtime.reload();
-  }, 1000);
+  }, 1500);
 }
 
 async function saveOrgFilters() {
