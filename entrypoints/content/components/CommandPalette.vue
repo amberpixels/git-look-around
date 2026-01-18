@@ -114,7 +114,13 @@
       <!-- (2) Main content: unified results list -->
       <div v-if="reposError" class="status error">{{ reposError }}</div>
       <div v-else-if="repos.length === 0 && !dataLoading" class="status empty-state">
-        No repos in database yet. Sync will happen automatically.
+        <template v-if="!syncStatus?.accountLogin">
+          <span>Not connected to GitHub.</span>
+          <a href="#" class="settings-link" @click.prevent="openSettings">Open Settings</a>
+        </template>
+        <template v-else>
+          No repos in database yet. Sync will happen automatically.
+        </template>
       </div>
 
       <div v-else class="results-container">
@@ -1466,6 +1472,13 @@ async function toggle() {
 }
 
 /**
+ * Open extension settings page via background script
+ */
+function openSettings() {
+  sendMessage(MessageType.OPEN_OPTIONS_PAGE);
+}
+
+/**
  * Handle cache update from background script
  * Only update UI if palette is currently open and showing results
  */
@@ -1983,6 +1996,19 @@ defineExpose({
 
 .status.empty-state {
   color: #6a737d;
+}
+
+.settings-link {
+  display: inline-block;
+  margin-left: 8px;
+  color: var(--fgColor-accent, #2f81f7);
+  text-decoration: none;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.settings-link:hover {
+  text-decoration: underline;
 }
 
 .results-container {
