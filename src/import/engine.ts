@@ -255,6 +255,12 @@ export async function runImport(onProgress?: ImportProgressCallback): Promise<vo
     const filteredRepos = allRepos.filter((repo) => {
       const owner = repo.full_name.split('/')[0];
 
+      // Always include fork parents so they appear in settings for user to configure
+      // (They can disable them later if they don't want to see their PRs)
+      if (forkParentRepoIds.has(repo.id)) {
+        return true;
+      }
+
       // If no filters set yet, include everything (first-time setup)
       if (!hasFilters) {
         return true;
