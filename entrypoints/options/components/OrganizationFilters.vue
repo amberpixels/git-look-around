@@ -17,6 +17,7 @@
           <div class="org-category-header">
             <label class="checkbox-label category-checkbox">
               <input
+                ref="myOrgsCheckbox"
                 :checked="allMyOrgsSelected"
                 type="checkbox"
                 class="checkbox"
@@ -45,6 +46,7 @@
           <div class="org-category-header">
             <label class="checkbox-label category-checkbox">
               <input
+                ref="contributingOrgsCheckbox"
                 :checked="allContributingOrgsSelected"
                 type="checkbox"
                 class="checkbox"
@@ -73,6 +75,7 @@
           <div class="org-category-header">
             <label class="checkbox-label category-checkbox">
               <input
+                ref="forkSourceOrgsCheckbox"
                 :checked="allForkSourceOrgsSelected"
                 type="checkbox"
                 class="checkbox"
@@ -101,7 +104,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, watchEffect } from 'vue';
 
 interface OrgFilterPreferences {
   enabledOrgs: Record<string, boolean>;
@@ -125,6 +128,11 @@ const emit = defineEmits<Emits>();
 const localFilters = ref<OrgFilterPreferences>({ ...props.filters });
 const saved = ref(false);
 
+// Template refs for header checkboxes (to set indeterminate state)
+const myOrgsCheckbox = ref<HTMLInputElement | null>(null);
+const contributingOrgsCheckbox = ref<HTMLInputElement | null>(null);
+const forkSourceOrgsCheckbox = ref<HTMLInputElement | null>(null);
+
 watch(
   () => props.filters,
   (newFilters) => {
@@ -133,18 +141,49 @@ watch(
   { deep: true },
 );
 
-const allMyOrgsSelected = computed(() => {
-  return props.myOrgs.every((org) => localFilters.value.enabledOrgs[org]);
+// Computed: count selected orgs in each category
+const myOrgsSelectedCount = computed(() => {
+  return props.myOrgs.filter((org) => localFilters.value.enabledOrgs[org]).length;
 });
 
-const allContributingOrgsSelected = computed(() => {
-  return props.contributingOrgs.every((org) => localFilters.value.enabledOrgs[org]);
+const contributingOrgsSelectedCount = computed(() => {
+  return props.contributingOrgs.filter((org) => localFilters.value.enabledOrgs[org]).length;
 });
 
-const allForkSourceOrgsSelected = computed(() => {
-  return props.forkSourceOrgs.every((org) => localFilters.value.enabledOrgs[org]);
+const forkSourceOrgsSelectedCount = computed(() => {
+  return props.forkSourceOrgs.filter((org) => localFilters.value.enabledOrgs[org]).length;
 });
 
+// Computed: check if all/some/none are selected
+const allMyOrgsSelected = computed(() => myOrgsSelectedCount.value === props.myOrgs.length);
+const someMyOrgsSelected = computed(() => myOrgsSelectedCount.value > 0 && !allMyOrgsSelected.value);
+
+const allContributingOrgsSelected = computed(() => contributingOrgsSelectedCount.value === props.contributingOrgs.length);
+const someContributingOrgsSelected = computed(() => contributingOrgsSelectedCount.value > 0 && !allContributingOrgsSelected.value);
+
+const allForkSourceOrgsSelected = computed(() => forkSourceOrgsSelectedCount.value === props.forkSourceOrgs.length);
+const someForkSourceOrgsSelected = computed(() => forkSourceOrgsSelectedCount.value > 0 && !allForkSourceOrgsSelected.value);
+
+// Set indeterminate state on checkboxes
+watchEffect(() => {
+  if (myOrgsCheckbox.value) {
+    myOrgsCheckbox.value.indeterminate = someMyOrgsSelected.value;
+  }
+});
+
+watchEffect(() => {
+  if (contributingOrgsCheckbox.value) {
+    contributingOrgsCheckbox.value.indeterminate = someContributingOrgsSelected.value;
+  }
+});
+
+watchEffect(() => {
+  if (forkSourceOrgsCheckbox.value) {
+    forkSourceOrgsCheckbox.value.indeterminate = someForkSourceOrgsSelected.value;
+  }
+});
+
+// Toggle functions: if not all selected, select all; otherwise deselect all
 function toggleAllMyOrgs() {
   const newValue = !allMyOrgsSelected.value;
   props.myOrgs.forEach((org) => {
