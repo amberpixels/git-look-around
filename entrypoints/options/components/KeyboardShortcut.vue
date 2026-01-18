@@ -124,8 +124,8 @@ function showSavedMessage() {
 }
 
 .shortcut-display {
-  flex: 1;
-  padding: 12px;
+  display: inline-block;
+  padding: 10px 16px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 6px;
