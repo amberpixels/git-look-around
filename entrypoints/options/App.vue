@@ -6,7 +6,7 @@
       <div class="section-header">
         <h2>GitHub Authentication</h2>
         <button
-          v-if="isAuthenticated && authMethod === 'oauth'"
+          v-if="isAuthenticated"
           class="btn-sign-out-header"
           @click="handleSignOut"
         >
@@ -14,133 +14,142 @@
         </button>
       </div>
 
-      <!-- OAuth Section -->
-      <div v-if="!isAuthenticated || authMethod === 'oauth'" class="auth-method-section">
-        <h3 v-if="!isAuthenticated">Recommended: Sign in with GitHub</h3>
-        <p v-if="!isAuthenticated" class="instructions">
-          One-click sign in - no tokens to create or manage. Just authorize and you're done.
-        </p>
-        <p v-if="!isAuthenticated" class="auth-note">
-          For organizations you don't own, the org admin may need to approve this app first.
-        </p>
+      <!-- Two-column layout when not authenticated -->
+      <div v-if="!isAuthenticated" class="auth-columns">
+        <!-- OAuth Column -->
+        <div class="auth-column">
+          <h3><span class="badge-recommended">Recommended</span> Sign in with GitHub</h3>
+          <p class="instructions">
+            One-click sign in - no tokens to create or manage. Just authorize and you're done.
+          </p>
+          <p class="auth-note">
+            For organizations you don't own, the org admin may need to approve this app first.
+          </p>
 
-        <AuthUserCard
-          v-if="authMethod === 'oauth' && isAuthenticated && !deviceFlowActive"
-          :user="githubUser"
-          :auth-time="authMetadata?.authenticatedAt"
-          :organizations="getSortedOrgs()"
-          :scopes="['repo', 'read:user', 'read:org']"
-        />
-
-        <!-- Device Flow Active State -->
-        <div v-if="deviceFlowActive" class="device-flow-container">
-          <div class="device-flow-step">
-            <h4>Step 1: Copy this code</h4>
-            <div class="user-code-display">
-              <span class="user-code">{{ userCode }}</span>
-              <button
-                class="btn-copy"
-                :class="{ copied: codeCopied }"
-                :title="codeCopied ? 'Copied!' : 'Copy code'"
-                @click="copyUserCode"
-              >
-                {{ codeCopied ? 'Copied' : 'Copy' }}
-              </button>
+          <!-- Device Flow Active State -->
+          <div v-if="deviceFlowActive" class="device-flow-container">
+            <div class="device-flow-step">
+              <h4>Step 1: Copy this code</h4>
+              <div class="user-code-display">
+                <span class="user-code">{{ userCode }}</span>
+                <button
+                  class="btn-copy"
+                  :class="{ copied: codeCopied }"
+                  :title="codeCopied ? 'Copied!' : 'Copy code'"
+                  @click="copyUserCode"
+                >
+                  {{ codeCopied ? 'Copied' : 'Copy' }}
+                </button>
+              </div>
             </div>
-          </div>
 
-          <div class="device-flow-step">
-            <h4>Step 2: Authorize on GitHub</h4>
-            <p class="device-flow-instructions">
-              A new tab should have opened to GitHub. If not, click below:
-            </p>
-            <a :href="verificationUri" target="_blank" class="btn-secondary btn-github-link">
-              Open GitHub Authorization
-            </a>
-          </div>
-
-          <div class="device-flow-step">
-            <h4>Step 3: Wait for confirmation</h4>
-            <div class="polling-status">
-              <div class="spinner"></div>
-              <span>{{ deviceFlowStatus }}</span>
+            <div class="device-flow-step">
+              <h4>Step 2: Authorize on GitHub</h4>
+              <p class="device-flow-instructions">
+                A new tab should have opened to GitHub. If not, click below:
+              </p>
+              <a :href="verificationUri" target="_blank" class="btn-secondary btn-github-link">
+                Open GitHub Authorization
+              </a>
             </div>
+
+            <div class="device-flow-step">
+              <h4>Step 3: Wait for confirmation</h4>
+              <div class="polling-status">
+                <div class="spinner"></div>
+                <span>{{ deviceFlowStatus }}</span>
+              </div>
+            </div>
+
+            <button class="btn-secondary btn-cancel" @click="cancelDeviceFlow">Cancel</button>
           </div>
 
-          <button class="btn-secondary btn-cancel" @click="cancelDeviceFlow">Cancel</button>
-        </div>
-
-        <!-- Normal State -->
-        <div v-if="!deviceFlowActive && !isAuthenticated" class="oauth-actions">
-          <button class="btn-primary btn-oauth" :disabled="oauthLoading" @click="handleOAuthSignIn">
-            <span v-if="!oauthLoading">Sign in with GitHub</span>
-            <span v-else>Starting authentication...</span>
-          </button>
-        </div>
-
-        <p v-if="oauthError" class="error">{{ oauthError }}</p>
-      </div>
-
-      <!-- Divider (only show when not authenticated) -->
-      <div v-if="!isAuthenticated" class="divider">
-        <span>OR</span>
-      </div>
-
-      <!-- PAT Section -->
-      <div v-if="!isAuthenticated || authMethod === 'pat'" class="auth-method-section">
-        <h3 v-if="!isAuthenticated">Personal Access Token (PAT)</h3>
-        <ol v-if="!isAuthenticated" class="pat-instructions">
-          <li>
-            <a
-              href="https://github.com/settings/tokens/new?description=git-look-around&from=git-look-around"
-              target="_blank"
-              >Click here to open GitHub Token Settings</a
-            >
-          </li>
-          <li>Permissions are highlighted</li>
-          <li>Generate token, copy and paste below</li>
-        </ol>
-
-        <!-- PAT Authenticated Card -->
-        <AuthUserCard
-          v-if="authMethod === 'pat' && isAuthenticated"
-          :user="githubUser"
-          :auth-time="authMetadata?.authenticatedAt"
-          :organizations="getSortedOrgs()"
-          :scopes="['repo', 'read:user', 'read:org']"
-        />
-
-        <div class="token-form">
-          <div v-if="authMethod === 'pat' && isAuthenticated" class="token-display-group">
-            <input v-model="tokenInput" type="text" class="token-input" readonly />
-            <span class="token-status success" title="Token is valid">✓</span>
-          </div>
-
-          <div v-else class="token-input-group">
-            <input
-              v-model="tokenInput"
-              type="text"
-              placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-              class="token-input"
-              @keyup.enter="saveToken"
-              @focus="handleTokenFocus"
-            />
-            <span v-if="error" class="token-status error" title="Token is invalid">✗</span>
-          </div>
-
-          <div v-if="authMethod === 'pat' && isAuthenticated" class="token-actions">
-            <button class="btn-primary" @click="handleTokenFocus">Update Token</button>
-            <button class="btn-secondary" @click="logout">Clear</button>
-          </div>
-
-          <div v-else class="token-actions">
-            <button class="btn-primary" :disabled="!tokenInput" @click="saveToken">
-              Save Token
+          <!-- Normal State -->
+          <div v-if="!deviceFlowActive" class="oauth-actions">
+            <button class="btn-primary btn-oauth" :disabled="oauthLoading" @click="handleOAuthSignIn">
+              <span v-if="!oauthLoading">Sign in with GitHub</span>
+              <span v-else>Starting authentication...</span>
             </button>
           </div>
 
-          <p v-if="error" class="error">{{ error }}</p>
-          <p v-if="tokenSaved" class="success small">✓ Token saved successfully</p>
+          <p v-if="oauthError" class="error">{{ oauthError }}</p>
+        </div>
+
+        <!-- PAT Column -->
+        <div class="auth-column">
+          <h3>Personal Access Token (PAT)</h3>
+          <ol class="pat-instructions">
+            <li>
+              <a
+                href="https://github.com/settings/tokens/new?description=git-look-around&from=git-look-around"
+                target="_blank"
+                >Click here to open GitHub Token Settings</a
+              >
+            </li>
+            <li>Permissions are highlighted</li>
+            <li>Generate token, copy and paste below</li>
+          </ol>
+
+          <div class="token-form">
+            <div class="token-input-group">
+              <input
+                v-model="tokenInput"
+                type="text"
+                placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                class="token-input"
+                @keyup.enter="saveToken"
+                @focus="handleTokenFocus"
+              />
+              <span v-if="error" class="token-status error" title="Token is invalid">✗</span>
+            </div>
+
+            <div class="token-actions">
+              <button class="btn-primary" :disabled="!tokenInput" @click="saveToken">
+                Save Token
+              </button>
+            </div>
+
+            <p v-if="error" class="error">{{ error }}</p>
+            <p v-if="tokenSaved" class="success small">✓ Token saved successfully</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Authenticated: Show single column for the active auth method -->
+      <div v-if="isAuthenticated && authMethod === 'oauth'" class="auth-method-section">
+        <AuthUserCard
+          v-if="!deviceFlowActive"
+          :user="githubUser"
+          :auth-time="authMetadata?.authenticatedAt"
+          :organizations="getSortedOrgs()"
+          :scopes="['repo', 'read:user', 'read:org']"
+        />
+      </div>
+
+      <div v-if="isAuthenticated && authMethod === 'pat'" class="auth-method-section">
+        <AuthUserCard
+          :user="githubUser"
+          :auth-time="authMetadata?.authenticatedAt"
+          :organizations="getSortedOrgs()"
+          :scopes="['repo', 'read:user', 'read:org']"
+        />
+
+        <div class="token-update-form">
+          <input
+            v-model="tokenInput"
+            type="text"
+            placeholder="Paste new token to update"
+            class="token-input"
+            @keyup.enter="saveToken"
+          />
+          <button
+            v-if="tokenHasChanged"
+            class="btn-primary btn-update-token"
+            @click="saveToken"
+          >
+            Update
+          </button>
+          <span v-else class="token-status success" title="Token is valid">✓</span>
         </div>
       </div>
     </div>
@@ -181,7 +190,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import AuthUserCard from '@/src/components/AuthUserCard.vue';
 import SyncPreferences from './components/SyncPreferences.vue';
 import OrganizationFilters from './components/OrganizationFilters.vue';
@@ -221,6 +230,7 @@ import { getUserOrganizations } from '@/src/api/github';
 
 const tokenInput = ref('');
 const actualToken = ref(''); // Store the actual token
+const originalMaskedToken = ref(''); // Store the original masked token to detect changes
 const isAuthenticated = ref(false);
 const error = ref('');
 const tokenSaved = ref(false);
@@ -260,6 +270,12 @@ const deviceFlowStatus = ref('');
 const codeCopied = ref(false);
 const githubUser = ref<{ login: string; avatar_url: string } | null>(null);
 
+// Computed: detect if token input has changed from original (for showing Update button)
+const tokenHasChanged = computed(() => {
+  // Only consider changed if there's input and it differs from original
+  return tokenInput.value.length > 0 && tokenInput.value !== originalMaskedToken.value;
+});
+
 function maskToken(token: string): string {
   if (!token || token.length < 12) return token;
   // Show first 7 characters and last 4: "ghp_abc...xyz1"
@@ -277,7 +293,9 @@ onMounted(async () => {
   // Show masked token if exists and using PAT
   if (token && authMethod.value === 'pat') {
     actualToken.value = token;
-    tokenInput.value = maskToken(token);
+    const masked = maskToken(token);
+    tokenInput.value = masked;
+    originalMaskedToken.value = masked;
   }
 
   // Load preferences
@@ -387,8 +405,10 @@ async function saveToken() {
     await loadGitHubUserInfo();
     await fetchOrganizationsFromAPI();
 
-    // Show masked token
-    tokenInput.value = maskToken(input);
+    // Show masked token and update original for change detection
+    const masked = maskToken(input);
+    tokenInput.value = masked;
+    originalMaskedToken.value = masked;
 
     // Notify background script to trigger sync
     const message: ExtensionMessage = {
@@ -568,10 +588,14 @@ function copyUserCode() {
 }
 
 async function handleSignOut() {
-  await oauthSignOut();
+  // Works for both OAuth and PAT - removes token and metadata
+  await removeGitHubToken();
+  await removeAuthMetadata();
   isAuthenticated.value = false;
   authMethod.value = null;
   authMetadata.value = null;
+  tokenInput.value = '';
+  error.value = '';
   oauthError.value = '';
 }
 
@@ -718,19 +742,9 @@ h2 {
 
 .auth-note {
   font-size: 13px;
-  padding: 8px 12px;
-  border-radius: 6px;
-  margin: 8px 0 12px 0;
-  background: rgba(212, 167, 44, 0.1);
-  border: 1px solid rgba(212, 167, 44, 0.3);
-  color: #b08800;
-}
-
-/* Dark mode adjustments */
-@media (prefers-color-scheme: dark) {
-  .auth-note {
-    color: #e3b341;
-  }
+  margin: 4px 0 12px 0;
+  color: var(--text-secondary);
+  font-style: italic;
 }
 
 .pat-instructions {
@@ -870,6 +884,30 @@ h2 {
 
 .token-form {
   margin-top: 8px;
+}
+
+.token-update-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.token-update-form .token-input {
+  flex: 1;
+  padding-right: 12px; /* No space needed for absolute positioned checkmark */
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  letter-spacing: 0.5px;
+}
+
+.token-update-form .token-status {
+  position: static;
+  flex-shrink: 0;
+}
+
+.btn-update-token {
+  flex-shrink: 0;
+  padding: 10px 16px;
 }
 
 .token-input-group {
@@ -1117,6 +1155,46 @@ h2 {
 }
 
 /* OAuth UI Styles */
+.auth-columns {
+  display: flex;
+  gap: 24px;
+}
+
+.auth-column {
+  flex: 1;
+  min-width: 0;
+}
+
+.auth-column h3 {
+  font-size: 16px;
+  margin-bottom: 8px;
+  margin-top: 0;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.badge-recommended {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(46, 164, 79, 0.15);
+  color: #2ea44f;
+  border-radius: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .badge-recommended {
+    background: rgba(46, 164, 79, 0.2);
+    color: #3fb950;
+  }
+}
+
 .auth-method-section {
   margin-bottom: 24px;
 }
@@ -1126,27 +1204,6 @@ h2 {
   margin-bottom: 8px;
   margin-top: 12px;
   color: var(--text-primary);
-}
-
-.divider {
-  display: flex;
-  align-items: center;
-  margin: 24px 0;
-  text-align: center;
-}
-
-.divider::before,
-.divider::after {
-  content: '';
-  flex: 1;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.divider span {
-  padding: 0 16px;
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 600;
 }
 
 /* OAuth Actions */

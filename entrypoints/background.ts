@@ -439,6 +439,12 @@ export default defineBackground(() => {
             break;
           }
 
+          case MessageType.OPEN_OPTIONS_PAGE: {
+            await browser.runtime.openOptionsPage();
+            sendResponse({ success: true });
+            break;
+          }
+
           default:
             sendResponse({ success: false, error: 'Unknown message type' });
         }

@@ -19,6 +19,7 @@ export const MessageType = {
   FETCH_AND_SAVE_PR: 'FETCH_AND_SAVE_PR',
   FETCH_AND_SAVE_ISSUE: 'FETCH_AND_SAVE_ISSUE',
   TOKEN_SAVED: 'TOKEN_SAVED',
+  OPEN_OPTIONS_PAGE: 'OPEN_OPTIONS_PAGE',
 } as const;
 
 export type MessageType = (typeof MessageType)[keyof typeof MessageType];
