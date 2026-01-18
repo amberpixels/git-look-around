@@ -249,14 +249,15 @@ export async function runImport(onProgress?: ImportProgressCallback): Promise<vo
       `[Import] Found ${allRepos.length} total repositories (${forkParentRepoIds.size} upstream(s) of your forks)`,
     );
 
-    // Step 1.5: Apply organization filters
+    // Step 1.5: Load organization filters (applied later for indexing, not for saving)
     const orgFilters = await getOrgFilterPreferences();
     const hasFilters = Object.keys(orgFilters.enabledOrgs).length > 0;
-    const filteredRepos = allRepos.filter((repo) => {
+
+    // Helper to check if a repo's org is enabled for indexing
+    const isOrgEnabledForIndexing = (repo: { full_name: string; id: number }): boolean => {
       const owner = repo.full_name.split('/')[0];
 
-      // Always include fork parents so they appear in settings for user to configure
-      // (They can disable them later if they don't want to see their PRs)
+      // Always index fork parents (user can disable in settings if they want)
       if (forkParentRepoIds.has(repo.id)) {
         return true;
       }
@@ -272,17 +273,15 @@ export async function runImport(onProgress?: ImportProgressCallback): Promise<vo
       }
 
       // If org is not in filter list but filters exist, exclude by default
-      // User can enable it in settings if they want it
       return false;
-    });
-    console.warn(
-      `[Import] After organization filters: ${filteredRepos.length} repositories (filtered out ${allRepos.length - filteredRepos.length})`,
-    );
+    };
 
     // Check contributor status and determine "repos of interest"
+    // NOTE: We process ALL repos so they all get saved to database (for settings UI)
+    // Org filter is applied later when selecting repos to INDEX (fetch PRs/issues)
     console.warn('[Import] Checking contributor status and repos of interest...');
     const repoRecords = await Promise.all(
-      filteredRepos.map(async (repo) => {
+      allRepos.map(async (repo) => {
         const [owner, repoName] = repo.full_name.split('/');
         let meContributing = false;
         let lastContributedAt: string | null = null;
@@ -335,11 +334,16 @@ export async function runImport(onProgress?: ImportProgressCallback): Promise<vo
       }),
     );
 
-    // Save all repos immediately (so UI can show them)
+    // Save all repos immediately (so UI can show them in settings)
     await saveRepos(repoRecords);
+    console.warn(`[Import] Saved ${repoRecords.length} repositories to database`);
 
     // Get repos of interest (candidates for indexing)
-    const reposOfInterest = repoRecords.filter((repo) => repo.indexed);
+    // Apply org filter HERE - only index repos from enabled orgs
+    const reposOfInterest = repoRecords.filter((repo) => repo.indexed && isOrgEnabledForIndexing(repo));
+    console.warn(
+      `[Import] After organization filters: ${reposOfInterest.length} repos to index (${repoRecords.length - reposOfInterest.length} filtered by org settings)`,
+    );
 
     // Apply limit: take top MAX_INDEXED_REPOS
     // Sort by: Personal repos → Own organizations → External organizations
