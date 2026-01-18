@@ -25,7 +25,11 @@ import {
   getPullRequestsByRepo,
 } from '@/src/storage/db';
 
-import { getImportPreferences } from '@/src/storage/chrome';
+import {
+  getImportPreferences,
+  getOrgFilterPreferences,
+  saveOrgFilterPreferences,
+} from '@/src/storage/chrome';
 import { isUserContributor, getLastContributionDate } from '@/src/api/github';
 import type { IssueRecord, PullRequestRecord } from '@/src/types';
 
@@ -245,10 +249,34 @@ export async function runImport(onProgress?: ImportProgressCallback): Promise<vo
       `[Import] Found ${allRepos.length} total repositories (${forkParentRepoIds.size} upstream(s) of your forks)`,
     );
 
+    // Step 1.5: Apply organization filters
+    const orgFilters = await getOrgFilterPreferences();
+    const hasFilters = Object.keys(orgFilters.enabledOrgs).length > 0;
+    const filteredRepos = allRepos.filter((repo) => {
+      const owner = repo.full_name.split('/')[0];
+
+      // If no filters set yet, include everything (first-time setup)
+      if (!hasFilters) {
+        return true;
+      }
+
+      // If org is in the filter list, respect the setting
+      if (owner in orgFilters.enabledOrgs) {
+        return orgFilters.enabledOrgs[owner] === true;
+      }
+
+      // If org is not in filter list but filters exist, exclude by default
+      // User can enable it in settings if they want it
+      return false;
+    });
+    console.warn(
+      `[Import] After organization filters: ${filteredRepos.length} repositories (filtered out ${allRepos.length - filteredRepos.length})`,
+    );
+
     // Check contributor status and determine "repos of interest"
     console.warn('[Import] Checking contributor status and repos of interest...');
     const repoRecords = await Promise.all(
-      allRepos.map(async (repo) => {
+      filteredRepos.map(async (repo) => {
         const [owner, repoName] = repo.full_name.split('/');
         let meContributing = false;
         let lastContributedAt: string | null = null;
@@ -543,6 +571,9 @@ export async function runImport(onProgress?: ImportProgressCallback): Promise<vo
       }
     }
 
+    // Update organization list from imported repos (including external orgs)
+    await syncOrganizationListFromRepos();
+
     // Mark import as completed successfully
     await updateImportStatus({
       isRunning: false,
@@ -748,6 +779,61 @@ export async function forceSyncSingleRepo(
 }
 
 /**
+ * Sync organization list from imported repos to preferences
+ * This ensures external orgs (fork parents, contributing orgs) appear in settings
+ */
+async function syncOrganizationListFromRepos(): Promise<void> {
+  const { getUniqueOrganizations } = await import('@/src/storage/db');
+  const { getMyOrgsFromAPI } = await import('@/src/storage/chrome');
+
+  // Get myOrgs list from storage (saved by settings page after API fetch)
+  const myOrgsFromAPI = await getMyOrgsFromAPI();
+  const orgs = await getUniqueOrganizations(myOrgsFromAPI);
+
+  // Get current filter preferences
+  const currentFilters = await getOrgFilterPreferences();
+
+  let hasNewOrgs = false;
+
+  // Add new "my orgs" as enabled (personal account + orgs from API)
+  for (const org of orgs.myOrgs) {
+    if (!(org in currentFilters.enabledOrgs)) {
+      currentFilters.enabledOrgs[org] = true; // Enable by default
+      hasNewOrgs = true;
+      console.warn(`[Import] Discovered new own organization: ${org} (enabled by default)`);
+    }
+  }
+
+  // Add new "contributing" orgs as DISABLED (external orgs with direct repos)
+  for (const org of orgs.contributingOrgs) {
+    if (!(org in currentFilters.enabledOrgs)) {
+      currentFilters.enabledOrgs[org] = false; // Disable by default
+      hasNewOrgs = true;
+      console.warn(
+        `[Import] Discovered new contributing organization: ${org} (disabled by default - enable in settings if needed)`,
+      );
+    }
+  }
+
+  // Add new "fork source" orgs as DISABLED (orgs with only fork parent repos)
+  for (const org of orgs.forkSourceOrgs) {
+    if (!(org in currentFilters.enabledOrgs)) {
+      currentFilters.enabledOrgs[org] = false; // Disable by default
+      hasNewOrgs = true;
+      console.warn(
+        `[Import] Discovered new fork source organization: ${org} (disabled by default - enable in settings if needed)`,
+      );
+    }
+  }
+
+  // Save updated preferences if new orgs were found
+  if (hasNewOrgs) {
+    await saveOrgFilterPreferences(currentFilters);
+    console.warn('[Import] Updated organization list with newly discovered orgs');
+  }
+}
+
+/**
  * Reset stuck import (for manual recovery)
  */
 export async function resetImport(): Promise<void> {
@@ -819,8 +905,28 @@ async function runQuickCheckOnce(): Promise<void> {
     // Fetch top N recently pushed repos
     const recentRepos = await getRecentlyPushedRepos(QUICK_CHECK_REPO_LIMIT);
 
+    // Apply organization filters
+    const orgFilters = await getOrgFilterPreferences();
+    const hasFilters = Object.keys(orgFilters.enabledOrgs).length > 0;
+    const filteredRecentRepos = recentRepos.filter((repo) => {
+      const owner = repo.full_name.split('/')[0];
+
+      // If no filters set yet, include everything
+      if (!hasFilters) {
+        return true;
+      }
+
+      // If org is in the filter list, respect the setting
+      if (owner in orgFilters.enabledOrgs) {
+        return orgFilters.enabledOrgs[owner] === true;
+      }
+
+      // If org is not in filter list but filters exist, exclude
+      return false;
+    });
+
     // Check each repo's PRs for updates
-    for (const apiRepo of recentRepos) {
+    for (const apiRepo of filteredRecentRepos) {
       const storedRepo = await getRepo(apiRepo.id);
 
       // Skip if repo doesn't exist in our DB yet (will be picked up by full import)

@@ -11,6 +11,7 @@ const STORAGE_KEYS = {
   HOTKEY_PREFERENCES: 'hotkey_preferences',
   DEBUG_MODE: 'debug_mode',
   ORG_FILTER_PREFERENCES: 'org_filter_preferences',
+  MY_ORGS_FROM_API: 'my_orgs_from_api', // Personal account + orgs from /user/orgs
 } as const;
 
 /**
@@ -215,6 +216,24 @@ export async function getOrgFilterPreferences(): Promise<OrgFilterPreferences> {
 export async function saveOrgFilterPreferences(preferences: OrgFilterPreferences): Promise<void> {
   await browser.storage.local.set({
     [STORAGE_KEYS.ORG_FILTER_PREFERENCES]: preferences,
+  });
+}
+
+/**
+ * Get "my orgs" list (personal account + orgs from /user/orgs API)
+ * These are orgs the user is a member of (admin or member role)
+ */
+export async function getMyOrgsFromAPI(): Promise<string[]> {
+  const result = await browser.storage.local.get(STORAGE_KEYS.MY_ORGS_FROM_API);
+  return (result[STORAGE_KEYS.MY_ORGS_FROM_API] as string[]) ?? [];
+}
+
+/**
+ * Save "my orgs" list
+ */
+export async function saveMyOrgsFromAPI(orgs: string[]): Promise<void> {
+  await browser.storage.local.set({
+    [STORAGE_KEYS.MY_ORGS_FROM_API]: orgs,
   });
 }
 

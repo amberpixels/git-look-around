@@ -345,6 +345,45 @@ export async function getUserOrganizations(): Promise<GitHubOrg[]> {
 }
 
 /**
+ * Organization membership info
+ */
+export interface OrgMembership {
+  org: string;
+  role: 'admin' | 'member';
+  state: 'active' | 'pending';
+}
+
+/**
+ * Get user's membership role in an organization
+ * Returns 'admin' (owner) or 'member'
+ */
+export async function getOrgMembership(orgName: string, username: string): Promise<OrgMembership | null> {
+  try {
+    const response = await githubFetch(`/orgs/${orgName}/memberships/${username}`);
+    const data = await response.json();
+    return {
+      org: orgName,
+      role: data.role, // 'admin' or 'member'
+      state: data.state, // 'active' or 'pending'
+    };
+  } catch (error) {
+    console.warn(`[GitHub API] Failed to get membership for ${orgName}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Get membership info for all user's organizations
+ */
+export async function getAllOrgMemberships(username: string): Promise<OrgMembership[]> {
+  const orgs = await getUserOrganizations();
+  const memberships = await Promise.all(
+    orgs.map(org => getOrgMembership(org.login, username))
+  );
+  return memberships.filter((m): m is OrgMembership => m !== null);
+}
+
+/**
  * Get repositories for a specific organization
  */
 export async function getOrgRepos(orgName: string): Promise<GitHubRepo[]> {
