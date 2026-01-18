@@ -17,7 +17,7 @@ const isDevelopment = import.meta.env.MODE === 'development';
 
 // GitHub OAuth Client IDs
 const GITHUB_OAUTH_CLIENT_ID_DEV = 'Ov23li6ZFZqbR6ELZ2kW';
-const GITHUB_OAUTH_CLIENT_ID_PROD = 'YOUR_PROD_CLIENT_ID'; // TODO: Replace after production OAuth app registration
+const GITHUB_OAUTH_CLIENT_ID_PROD = 'Ov23liNIryeGDg0Tb6Hg';
 
 // Device Flow endpoints
 const GITHUB_DEVICE_CODE_URL = 'https://github.com/login/device/code';
