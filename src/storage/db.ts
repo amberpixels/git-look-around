@@ -228,18 +228,21 @@ export async function setRepoIndexed(repoId: number, indexed: boolean): Promise<
  * Categorized organizations
  */
 export interface CategorizedOrganizations {
-  ownOrgs: string[]; // Personal account + organizations you own/contribute to
-  externalOrgs: string[]; // Organizations from forks (not owned by you)
+  myOrgs: string[]; // Personal account + orgs from /user/orgs API (admin or member)
+  contributingOrgs: string[]; // External orgs where you have direct repos (not fork parents)
+  forkSourceOrgs: string[]; // External orgs where you ONLY have fork parent repos
 }
 
 /**
- * Get unique organizations from all repos, categorized into own vs external
- * Own orgs: Personal account + orgs where you have non-fork repos or contribute
- * External orgs: Orgs that ONLY contain fork parent repos
+ * Get unique organizations from all repos, categorized into 3 groups
+ * @param myOrgsFromAPI - Orgs from /user/orgs API + personal account (known "my" orgs)
  */
-export async function getUniqueOrganizations(): Promise<CategorizedOrganizations> {
+export async function getUniqueOrganizations(myOrgsFromAPI: string[] = []): Promise<CategorizedOrganizations> {
   const repos = await getAllRepos();
   const orgRepoMap = new Map<string, RepoRecord[]>();
+
+  // Normalize myOrgsFromAPI to lowercase for comparison
+  const myOrgsSet = new Set(myOrgsFromAPI.map(o => o.toLowerCase()));
 
   // Group repos by organization
   for (const repo of repos) {
@@ -253,25 +256,41 @@ export async function getUniqueOrganizations(): Promise<CategorizedOrganizations
     }
   }
 
-  const ownOrgs: string[] = [];
-  const externalOrgs: string[] = [];
+  const myOrgs: string[] = [];
+  const contributingOrgs: string[] = [];
+  const forkSourceOrgs: string[] = [];
 
   // Categorize each organization
   for (const [org, orgRepos] of orgRepoMap.entries()) {
-    // Check if this org has any repos that are NOT fork parents
-    // If all repos are fork parents, it's an external org
+    // Check if this is a "my org" from API
+    if (myOrgsSet.has(org.toLowerCase())) {
+      myOrgs.push(org);
+      continue;
+    }
+
+    // For external orgs, check if they have non-fork-parent repos
     const hasNonForkParentRepos = orgRepos.some((repo) => !repo.is_parent_of_my_fork);
 
     if (hasNonForkParentRepos) {
-      ownOrgs.push(org);
+      // Has direct repos - contributing to this org
+      contributingOrgs.push(org);
     } else {
-      externalOrgs.push(org);
+      // Only fork parents - just a fork source
+      forkSourceOrgs.push(org);
+    }
+  }
+
+  // Add any myOrgsFromAPI that weren't found in repos (e.g., empty orgs)
+  for (const org of myOrgsFromAPI) {
+    if (!myOrgs.some(o => o.toLowerCase() === org.toLowerCase())) {
+      myOrgs.push(org);
     }
   }
 
   return {
-    ownOrgs: ownOrgs.sort(),
-    externalOrgs: externalOrgs.sort(),
+    myOrgs: myOrgs.sort(),
+    contributingOrgs: contributingOrgs.sort(),
+    forkSourceOrgs: forkSourceOrgs.sort(),
   };
 }
 

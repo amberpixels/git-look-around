@@ -153,12 +153,10 @@
     />
 
     <OrganizationFilters
-      v-if="
-        isAuthenticated &&
-        (availableOrgs.ownOrgs.length > 0 || availableOrgs.externalOrgs.length > 0)
-      "
-      :own-orgs="availableOrgs.ownOrgs"
-      :external-orgs="availableOrgs.externalOrgs"
+      v-if="isAuthenticated"
+      :my-orgs="availableOrgs.myOrgs"
+      :contributing-orgs="availableOrgs.contributingOrgs"
+      :fork-source-orgs="availableOrgs.forkSourceOrgs"
       :filters="orgFilterPreferences"
       @update:filters="orgFilterPreferences = $event"
       @save="saveOrgFilters"
@@ -219,6 +217,7 @@ import {
   completeDeviceFlow,
   signOut as oauthSignOut,
 } from '@/src/auth/oauth-service';
+import { getUserOrganizations } from '@/src/api/github';
 
 const tokenInput = ref('');
 const actualToken = ref(''); // Store the actual token
@@ -239,8 +238,9 @@ const hotkeyPreferences = ref<HotkeyPreferences>({
 const hotkeyPreferencesSaved = ref(false);
 const reloadTimeoutId = ref<number | null>(null);
 const availableOrgs = ref<CategorizedOrganizations>({
-  ownOrgs: [],
-  externalOrgs: [],
+  myOrgs: [],
+  contributingOrgs: [],
+  forkSourceOrgs: [],
 });
 const orgFilterPreferences = ref<OrgFilterPreferences>({
   enabledOrgs: {},
@@ -289,27 +289,52 @@ onMounted(async () => {
 
   // Load organizations and org filter preferences
   if (isAuthenticated.value) {
-    availableOrgs.value = await getUniqueOrganizations();
-    orgFilterPreferences.value = await getOrgFilterPreferences();
-
-    // Initialize missing orgs to enabled (default)
-    const allOrgs = [...availableOrgs.value.ownOrgs, ...availableOrgs.value.externalOrgs];
-    for (const org of allOrgs) {
-      if (!(org in orgFilterPreferences.value.enabledOrgs)) {
-        orgFilterPreferences.value.enabledOrgs[org] = true;
-      }
-    }
-
-    // Load GitHub user info for both OAuth and PAT
+    // Load GitHub user info first (needed to build myOrgs list)
     if (authMethod.value === 'oauth' || authMethod.value === 'pat') {
       await loadGitHubUserInfo();
+      await fetchOrganizationsFromAPI();
+    }
+
+    orgFilterPreferences.value = await getOrgFilterPreferences();
+
+    // Initialize missing orgs to enabled (myOrgs) or disabled (external)
+    const allOrgs = [
+      ...availableOrgs.value.myOrgs,
+      ...availableOrgs.value.contributingOrgs,
+      ...availableOrgs.value.forkSourceOrgs,
+    ];
+    for (const org of allOrgs) {
+      if (!(org in orgFilterPreferences.value.enabledOrgs)) {
+        // Default: myOrgs enabled, external orgs disabled
+        const isMyOrg = availableOrgs.value.myOrgs.some(o => o.toLowerCase() === org.toLowerCase());
+        orgFilterPreferences.value.enabledOrgs[org] = isMyOrg;
+      }
     }
   }
 
   // Load keyboard shortcut
   await loadShortcut();
   void debugLog('[Options] After loadShortcut, shortcutKey:', shortcutKey.value);
+
+  // Listen for storage changes to reload org list when sync discovers new orgs
+  browser.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === 'local' && changes.org_filter_preferences) {
+      void reloadOrganizations();
+    }
+  });
 });
+
+async function reloadOrganizations() {
+  if (!isAuthenticated.value) return;
+
+  // Get my orgs from current state (or re-fetch from API if needed)
+  const myOrgsFromAPI = availableOrgs.value.myOrgs.length > 0
+    ? availableOrgs.value.myOrgs
+    : [];
+
+  availableOrgs.value = await getUniqueOrganizations(myOrgsFromAPI);
+  orgFilterPreferences.value = await getOrgFilterPreferences();
+}
 
 async function loadShortcut() {
   try {
@@ -360,6 +385,7 @@ async function saveToken() {
 
     // Load user info and orgs
     await loadGitHubUserInfo();
+    await fetchOrganizationsFromAPI();
 
     // Show masked token
     tokenInput.value = maskToken(input);
@@ -502,8 +528,8 @@ async function handleOAuthSignIn() {
       // Load GitHub user info
       await loadGitHubUserInfo();
 
-      // Load organizations
-      availableOrgs.value = await getUniqueOrganizations();
+      // Load organizations from GitHub API
+      await fetchOrganizationsFromAPI();
 
       // Notify background to trigger sync
       const message: ExtensionMessage = {
@@ -571,11 +597,51 @@ async function loadGitHubUserInfo() {
   }
 }
 
+async function fetchOrganizationsFromAPI() {
+  try {
+    // Fetch organizations from GitHub API
+    const orgs = await getUserOrganizations();
+    const orgNames = orgs.map((org) => org.login);
+    const username = githubUser.value?.login;
+
+    // Build list of "my orgs" (personal account + orgs from API)
+    const myOrgsFromAPI: string[] = [...orgNames];
+    if (username && !myOrgsFromAPI.includes(username)) {
+      myOrgsFromAPI.unshift(username);
+    }
+
+    // Save myOrgs list to storage (so engine.ts can use it during sync)
+    const { saveMyOrgsFromAPI } = await import('@/src/storage/chrome');
+    await saveMyOrgsFromAPI(myOrgsFromAPI);
+
+    // Get categorized orgs from IndexedDB, passing myOrgs list
+    availableOrgs.value = await getUniqueOrganizations(myOrgsFromAPI);
+
+    // Initialize org filter preferences for new orgs
+    const currentFilters = await getOrgFilterPreferences();
+    const allOrgs = [
+      ...availableOrgs.value.myOrgs,
+      ...availableOrgs.value.contributingOrgs,
+      ...availableOrgs.value.forkSourceOrgs,
+    ];
+    for (const org of allOrgs) {
+      if (!(org in currentFilters.enabledOrgs)) {
+        // Default: myOrgs enabled, external orgs disabled
+        const isMyOrg = availableOrgs.value.myOrgs.some(o => o.toLowerCase() === org.toLowerCase());
+        currentFilters.enabledOrgs[org] = isMyOrg;
+      }
+    }
+    orgFilterPreferences.value = currentFilters;
+  } catch (error) {
+    console.error('[Options] Failed to fetch organizations from API:', error);
+  }
+}
+
 function getSortedOrgs(): string[] {
-  if (!availableOrgs.value.ownOrgs.length) return [];
+  if (!availableOrgs.value.myOrgs.length) return [];
 
   const username = githubUser.value?.login;
-  const orgs = [...availableOrgs.value.ownOrgs];
+  const orgs = [...availableOrgs.value.myOrgs];
 
   // Put user's personal org (same as username) first
   if (username) {
@@ -592,12 +658,13 @@ function getSortedOrgs(): string[] {
 
 <style scoped>
 .options-container {
-  max-width: 40%;
-  min-width: 600px;
+  width: 100%;
+  max-width: 800px;
   margin: 0px auto;
   padding: 8px 20px 12px 20px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   color: var(--text-primary);
+  box-sizing: border-box;
 }
 
 h1 {
@@ -1047,73 +1114,6 @@ h2 {
 .shortcut-key.unset {
   color: var(--text-secondary);
   font-style: italic;
-}
-
-.org-columns {
-  display: flex;
-  gap: 20px;
-  margin-top: 12px;
-}
-
-.org-column {
-  flex: 1;
-  min-width: 0;
-}
-
-.org-category-header {
-  margin-bottom: 12px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--border-color);
-}
-
-.category-checkbox {
-  cursor: pointer;
-  user-select: none;
-}
-
-.category-checkbox .org-category-title {
-  display: inline;
-  font-size: 17px;
-  font-weight: 700;
-  margin: 0;
-  color: var(--text-primary);
-  letter-spacing: 0.3px;
-}
-
-.org-category-title {
-  font-size: 16px;
-  font-weight: 600;
-  margin-top: 12px;
-  margin-bottom: 8px;
-  color: var(--text-primary);
-}
-
-.org-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 186px; /* 6rows * 31 */
-  overflow-y: auto;
-  padding-right: 8px;
-}
-
-/* Custom scrollbar styling */
-.org-list::-webkit-scrollbar {
-  width: 8px;
-}
-
-.org-list::-webkit-scrollbar-track {
-  background: var(--bg-secondary);
-  border-radius: 4px;
-}
-
-.org-list::-webkit-scrollbar-thumb {
-  background: var(--border-color);
-  border-radius: 4px;
-}
-
-.org-list::-webkit-scrollbar-thumb:hover {
-  background: var(--text-secondary);
 }
 
 /* OAuth UI Styles */

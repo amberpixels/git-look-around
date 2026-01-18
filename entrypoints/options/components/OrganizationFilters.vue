@@ -6,56 +6,92 @@
       excluded.
     </p>
 
-    <div class="org-columns">
-      <!-- Own Organizations -->
-      <div v-if="ownOrgs.length > 0" class="org-column">
-        <div class="org-category-header">
-          <label class="checkbox-label category-checkbox">
-            <input
-              :checked="allOwnOrgsSelected"
-              type="checkbox"
-              class="checkbox"
-              @change="toggleAllOwnOrgs"
-            />
-            <h3 class="org-category-title">My Organizations</h3>
-          </label>
-        </div>
-        <div class="org-list">
-          <label v-for="org in ownOrgs" :key="org" class="checkbox-label">
-            <input
-              v-model="localFilters.enabledOrgs[org]"
-              type="checkbox"
-              class="checkbox"
-              @change="handleChange"
-            />
-            <span>{{ org }}</span>
-          </label>
+    <div v-if="myOrgs.length === 0 && contributingOrgs.length === 0 && forkSourceOrgs.length === 0" class="empty-state">
+      <p>Loading organizations...</p>
+    </div>
+
+    <div v-else class="org-columns">
+      <!-- My Organizations -->
+      <div class="org-column">
+        <div v-if="myOrgs.length > 0">
+          <div class="org-category-header">
+            <label class="checkbox-label category-checkbox">
+              <input
+                :checked="allMyOrgsSelected"
+                type="checkbox"
+                class="checkbox"
+                @change="toggleAllMyOrgs"
+              />
+              <h3 class="org-category-title">My Organizations</h3>
+            </label>
+          </div>
+          <div class="org-list">
+            <label v-for="org in myOrgs" :key="org" class="checkbox-label">
+              <input
+                v-model="localFilters.enabledOrgs[org]"
+                type="checkbox"
+                class="checkbox"
+                @change="handleChange"
+              />
+              <span>{{ org }}</span>
+            </label>
+          </div>
         </div>
       </div>
 
-      <!-- External Organizations (from forks) -->
-      <div v-if="externalOrgs.length > 0" class="org-column">
-        <div class="org-category-header">
-          <label class="checkbox-label category-checkbox">
-            <input
-              :checked="allExternalOrgsSelected"
-              type="checkbox"
-              class="checkbox"
-              @change="toggleAllExternalOrgs"
-            />
-            <h3 class="org-category-title">Other</h3>
-          </label>
+      <!-- Contributing To (external orgs with direct repos) -->
+      <div class="org-column">
+        <div v-if="contributingOrgs.length > 0">
+          <div class="org-category-header">
+            <label class="checkbox-label category-checkbox">
+              <input
+                :checked="allContributingOrgsSelected"
+                type="checkbox"
+                class="checkbox"
+                @change="toggleAllContributingOrgs"
+              />
+              <h3 class="org-category-title">Contributing To</h3>
+            </label>
+          </div>
+          <div class="org-list">
+            <label v-for="org in contributingOrgs" :key="org" class="checkbox-label">
+              <input
+                v-model="localFilters.enabledOrgs[org]"
+                type="checkbox"
+                class="checkbox"
+                @change="handleChange"
+              />
+              <span>{{ org }}</span>
+            </label>
+          </div>
         </div>
-        <div class="org-list">
-          <label v-for="org in externalOrgs" :key="org" class="checkbox-label">
-            <input
-              v-model="localFilters.enabledOrgs[org]"
-              type="checkbox"
-              class="checkbox"
-              @change="handleChange"
-            />
-            <span>{{ org }}</span>
-          </label>
+      </div>
+
+      <!-- Fork Sources (orgs with only fork parent repos) -->
+      <div class="org-column">
+        <div v-if="forkSourceOrgs.length > 0">
+          <div class="org-category-header">
+            <label class="checkbox-label category-checkbox">
+              <input
+                :checked="allForkSourceOrgsSelected"
+                type="checkbox"
+                class="checkbox"
+                @change="toggleAllForkSourceOrgs"
+              />
+              <h3 class="org-category-title">Fork Sources</h3>
+            </label>
+          </div>
+          <div class="org-list">
+            <label v-for="org in forkSourceOrgs" :key="org" class="checkbox-label">
+              <input
+                v-model="localFilters.enabledOrgs[org]"
+                type="checkbox"
+                class="checkbox"
+                @change="handleChange"
+              />
+              <span>{{ org }}</span>
+            </label>
+          </div>
         </div>
       </div>
     </div>
@@ -72,8 +108,9 @@ interface OrgFilterPreferences {
 }
 
 interface Props {
-  ownOrgs: string[];
-  externalOrgs: string[];
+  myOrgs: string[];
+  contributingOrgs: string[];
+  forkSourceOrgs: string[];
   filters: OrgFilterPreferences;
 }
 
@@ -96,25 +133,37 @@ watch(
   { deep: true },
 );
 
-const allOwnOrgsSelected = computed(() => {
-  return props.ownOrgs.every((org) => localFilters.value.enabledOrgs[org]);
+const allMyOrgsSelected = computed(() => {
+  return props.myOrgs.every((org) => localFilters.value.enabledOrgs[org]);
 });
 
-const allExternalOrgsSelected = computed(() => {
-  return props.externalOrgs.every((org) => localFilters.value.enabledOrgs[org]);
+const allContributingOrgsSelected = computed(() => {
+  return props.contributingOrgs.every((org) => localFilters.value.enabledOrgs[org]);
 });
 
-function toggleAllOwnOrgs() {
-  const newValue = !allOwnOrgsSelected.value;
-  props.ownOrgs.forEach((org) => {
+const allForkSourceOrgsSelected = computed(() => {
+  return props.forkSourceOrgs.every((org) => localFilters.value.enabledOrgs[org]);
+});
+
+function toggleAllMyOrgs() {
+  const newValue = !allMyOrgsSelected.value;
+  props.myOrgs.forEach((org) => {
     localFilters.value.enabledOrgs[org] = newValue;
   });
   handleChange();
 }
 
-function toggleAllExternalOrgs() {
-  const newValue = !allExternalOrgsSelected.value;
-  props.externalOrgs.forEach((org) => {
+function toggleAllContributingOrgs() {
+  const newValue = !allContributingOrgsSelected.value;
+  props.contributingOrgs.forEach((org) => {
+    localFilters.value.enabledOrgs[org] = newValue;
+  });
+  handleChange();
+}
+
+function toggleAllForkSourceOrgs() {
+  const newValue = !allForkSourceOrgsSelected.value;
+  props.forkSourceOrgs.forEach((org) => {
     localFilters.value.enabledOrgs[org] = newValue;
   });
   handleChange();
@@ -141,16 +190,36 @@ function handleChange() {
   color: var(--text-secondary);
 }
 
+.empty-state {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
 .org-columns {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 24px;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 16px;
 }
 
 .org-column {
+  width: calc(33.333% - 11px);
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+@media (max-width: 700px) {
+  .org-columns {
+    flex-direction: column;
+  }
+
+  .org-column {
+    width: 100%;
+  }
 }
 
 .org-category-header {
