@@ -13,6 +13,7 @@ const isDebugMode = ref(false);
 const shortcutKey = ref<string>('');
 const currentRepoName = ref<string | null>(null);
 const isCurrentRepoIndexed = ref(false);
+const paletteError = ref<string | null>(null);
 
 // Use composables for data fetching
 const { status: syncStatus } = useImportStatus(5000); // Poll every 5 seconds
@@ -129,6 +130,7 @@ function openShortcutSettings() {
 }
 
 async function openCommandPalette() {
+  paletteError.value = null;
   try {
     // Get the active tab
     const tabs = await browser.tabs.query({ active: true, currentWindow: true });
@@ -142,6 +144,14 @@ async function openCommandPalette() {
     }
   } catch (error) {
     console.error('Failed to open command palette:', error);
+    // Check if it's a connection error (content script not ready)
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    if (errorMessage.includes('Could not establish connection') ||
+        errorMessage.includes('Receiving end does not exist')) {
+      paletteError.value = 'Please refresh this page first';
+    } else {
+      paletteError.value = 'Failed to open palette';
+    }
   }
 }
 
@@ -236,7 +246,10 @@ function getTimeAgo(timestamp: number): string {
       <div class="info-section">
         <div class="info-label">Command Palette</div>
         <div class="command-palette-info">
-          <button class="command-palette-btn" @click="openCommandPalette">Open Palette</button>
+          <div class="palette-btn-wrapper">
+            <button class="command-palette-btn" @click="openCommandPalette">Open Palette</button>
+            <div v-if="paletteError" class="palette-error">{{ paletteError }}</div>
+          </div>
           <div v-if="formattedShortcutKeys.length > 0" class="shortcut-display">
             <span class="shortcut-text">Shortcut:</span>
             <div class="shortcut-keys">
@@ -539,6 +552,19 @@ function getTimeAgo(timestamp: number): string {
   background: #024aa8;
 }
 
+.palette-btn-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.palette-error {
+  font-size: 11px;
+  color: #d73a49;
+  font-weight: 500;
+}
+
 .btn-icon {
   display: flex;
   align-items: center;
@@ -808,6 +834,10 @@ function getTimeAgo(timestamp: number): string {
 
 .dark-theme .command-palette-btn:active {
   background: #58a6ff;
+}
+
+.dark-theme .palette-error {
+  color: #f85149;
 }
 
 .dark-theme .footer {
