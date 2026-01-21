@@ -94,7 +94,10 @@ function handleModeChange() {
 
 function updateCustomHosts() {
   // Deep copy to ensure new references for proper reactivity
-  emit('update:preferences', { ...localPreferences.value, customHosts: [...localPreferences.value.customHosts] });
+  emit('update:preferences', {
+    ...localPreferences.value,
+    customHosts: [...localPreferences.value.customHosts],
+  });
   emit('save');
   showSavedMessage();
 }

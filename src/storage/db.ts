@@ -237,12 +237,14 @@ export interface CategorizedOrganizations {
  * Get unique organizations from all repos, categorized into 3 groups
  * @param myOrgsFromAPI - Orgs from /user/orgs API + personal account (known "my" orgs)
  */
-export async function getUniqueOrganizations(myOrgsFromAPI: string[] = []): Promise<CategorizedOrganizations> {
+export async function getUniqueOrganizations(
+  myOrgsFromAPI: string[] = [],
+): Promise<CategorizedOrganizations> {
   const repos = await getAllRepos();
   const orgRepoMap = new Map<string, RepoRecord[]>();
 
   // Normalize myOrgsFromAPI to lowercase for comparison
-  const myOrgsSet = new Set(myOrgsFromAPI.map(o => o.toLowerCase()));
+  const myOrgsSet = new Set(myOrgsFromAPI.map((o) => o.toLowerCase()));
 
   // Group repos by organization
   for (const repo of repos) {
@@ -282,7 +284,7 @@ export async function getUniqueOrganizations(myOrgsFromAPI: string[] = []): Prom
 
   // Add any myOrgsFromAPI that weren't found in repos (e.g., empty orgs)
   for (const org of myOrgsFromAPI) {
-    if (!myOrgs.some(o => o.toLowerCase() === org.toLowerCase())) {
+    if (!myOrgs.some((o) => o.toLowerCase() === org.toLowerCase())) {
       myOrgs.push(org);
     }
   }

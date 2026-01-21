@@ -257,17 +257,13 @@ export async function runImport(onProgress?: ImportProgressCallback): Promise<vo
     const isOrgEnabledForIndexing = (repo: { full_name: string; id: number }): boolean => {
       const owner = repo.full_name.split('/')[0];
 
-      // Always index fork parents (user can disable in settings if they want)
-      if (forkParentRepoIds.has(repo.id)) {
-        return true;
-      }
-
       // If no filters set yet, include everything (first-time setup)
       if (!hasFilters) {
         return true;
       }
 
       // If org is in the filter list, respect the setting
+      // This applies to all repos including fork parents - user can enable/disable as needed
       if (owner in orgFilters.enabledOrgs) {
         return orgFilters.enabledOrgs[owner] === true;
       }
@@ -340,7 +336,9 @@ export async function runImport(onProgress?: ImportProgressCallback): Promise<vo
 
     // Get repos of interest (candidates for indexing)
     // Apply org filter HERE - only index repos from enabled orgs
-    const reposOfInterest = repoRecords.filter((repo) => repo.indexed && isOrgEnabledForIndexing(repo));
+    const reposOfInterest = repoRecords.filter(
+      (repo) => repo.indexed && isOrgEnabledForIndexing(repo),
+    );
     console.warn(
       `[Import] After organization filters: ${reposOfInterest.length} repos to index (${repoRecords.length - reposOfInterest.length} filtered by org settings)`,
     );

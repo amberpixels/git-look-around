@@ -5,11 +5,7 @@
     <div class="section">
       <div class="section-header">
         <h2>GitHub Authentication</h2>
-        <button
-          v-if="isAuthenticated"
-          class="btn-sign-out-header"
-          @click="handleSignOut"
-        >
+        <button v-if="isAuthenticated" class="btn-sign-out-header" @click="handleSignOut">
           Sign Out
         </button>
       </div>
@@ -66,7 +62,11 @@
 
           <!-- Normal State -->
           <div v-if="!deviceFlowActive" class="oauth-actions">
-            <button class="btn-primary btn-oauth" :disabled="oauthLoading" @click="handleOAuthSignIn">
+            <button
+              class="btn-primary btn-oauth"
+              :disabled="oauthLoading"
+              @click="handleOAuthSignIn"
+            >
               <span v-if="!oauthLoading">Sign in with GitHub</span>
               <span v-else>Starting authentication...</span>
             </button>
@@ -142,11 +142,7 @@
             class="token-input"
             @keyup.enter="saveToken"
           />
-          <button
-            v-if="tokenHasChanged"
-            class="btn-primary btn-update-token"
-            @click="saveToken"
-          >
+          <button v-if="tokenHasChanged" class="btn-primary btn-update-token" @click="saveToken">
             Update
           </button>
           <span v-else class="token-status success" title="Token is valid">✓</span>
@@ -324,7 +320,9 @@ onMounted(async () => {
     for (const org of allOrgs) {
       if (!(org in orgFilterPreferences.value.enabledOrgs)) {
         // Default: myOrgs enabled, external orgs disabled
-        const isMyOrg = availableOrgs.value.myOrgs.some(o => o.toLowerCase() === org.toLowerCase());
+        const isMyOrg = availableOrgs.value.myOrgs.some(
+          (o) => o.toLowerCase() === org.toLowerCase(),
+        );
         orgFilterPreferences.value.enabledOrgs[org] = isMyOrg;
       }
     }
@@ -346,9 +344,7 @@ async function reloadOrganizations() {
   if (!isAuthenticated.value) return;
 
   // Get my orgs from current state (or re-fetch from API if needed)
-  const myOrgsFromAPI = availableOrgs.value.myOrgs.length > 0
-    ? availableOrgs.value.myOrgs
-    : [];
+  const myOrgsFromAPI = availableOrgs.value.myOrgs.length > 0 ? availableOrgs.value.myOrgs : [];
 
   availableOrgs.value = await getUniqueOrganizations(myOrgsFromAPI);
   orgFilterPreferences.value = await getOrgFilterPreferences();
@@ -651,7 +647,9 @@ async function fetchOrganizationsFromAPI() {
     for (const org of allOrgs) {
       if (!(org in currentFilters.enabledOrgs)) {
         // Default: myOrgs enabled, external orgs disabled
-        const isMyOrg = availableOrgs.value.myOrgs.some(o => o.toLowerCase() === org.toLowerCase());
+        const isMyOrg = availableOrgs.value.myOrgs.some(
+          (o) => o.toLowerCase() === org.toLowerCase(),
+        );
         currentFilters.enabledOrgs[org] = isMyOrg;
       }
     }

@@ -118,9 +118,7 @@
           <span>Not connected to GitHub.</span>
           <a href="#" class="settings-link" @click.prevent="openSettings">Open Settings</a>
         </template>
-        <template v-else>
-          No repos in database yet. Sync will happen automatically.
-        </template>
+        <template v-else> No repos in database yet. Sync will happen automatically. </template>
       </div>
 
       <div v-else class="results-container">

@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { isAuthenticated as checkAuth, getDebugMode } from '@/src/storage/chrome';
 import { useImportStatus } from '@/src/composables/useImportStatus';
 import { useRateLimit } from '@/src/composables/useRateLimit';
@@ -18,6 +18,18 @@ const paletteError = ref<string | null>(null);
 // Use composables for data fetching
 const { status: syncStatus } = useImportStatus(5000); // Poll every 5 seconds
 const { rateLimit, getRateLimitStatus } = useRateLimit(5000);
+
+// Track last known indexed repos count (to show during sync when progress is 0)
+const lastKnownIndexedRepos = ref(0);
+watch(
+  () => syncStatus.value?.progress.indexedRepos,
+  (newValue) => {
+    if (newValue && newValue > 0) {
+      lastKnownIndexedRepos.value = newValue;
+    }
+  },
+  { immediate: true },
+);
 
 // Computed sync status text (not currently used, reserved for future)
 const _syncStatusText = computed(() => {
@@ -146,8 +158,10 @@ async function openCommandPalette() {
     console.error('Failed to open command palette:', error);
     // Check if it's a connection error (content script not ready)
     const errorMessage = error instanceof Error ? error.message : String(error);
-    if (errorMessage.includes('Could not establish connection') ||
-        errorMessage.includes('Receiving end does not exist')) {
+    if (
+      errorMessage.includes('Could not establish connection') ||
+      errorMessage.includes('Receiving end does not exist')
+    ) {
       paletteError.value = 'Please refresh this page first';
     } else {
       paletteError.value = 'Failed to open palette';
@@ -273,11 +287,20 @@ function getTimeAgo(timestamp: number): string {
             <span class="check-mark">✓</span>
           </div>
           <div class="sync-stats">
-            {{ syncStatus.progress.indexedRepos || 0 }} repos indexed
-            <span class="sync-time">
-              (synced
-              {{ syncStatus.lastCompletedAt ? getTimeAgo(syncStatus.lastCompletedAt) : 'never' }})
-            </span>
+            <template v-if="syncStatus.isRunning">
+              {{ Math.max(syncStatus.progress.issuesProgress, syncStatus.progress.prsProgress) }}/{{
+                syncStatus.progress.indexedRepos || lastKnownIndexedRepos
+              }}
+              repos indexed
+              <span class="sync-time">(syncing...)</span>
+            </template>
+            <template v-else>
+              {{ syncStatus.progress.indexedRepos || 0 }} repos indexed
+              <span v-if="syncStatus.lastCompletedAt" class="sync-time">
+                (synced {{ getTimeAgo(syncStatus.lastCompletedAt) }})
+              </span>
+              <span v-else class="sync-time"> (never synced) </span>
+            </template>
           </div>
           <div class="sync-actions">
             <a
@@ -286,7 +309,7 @@ function getTimeAgo(timestamp: number): string {
               :class="{ disabled: syncStatus.isRunning }"
               @click.prevent="!syncStatus.isRunning && triggerSync()"
             >
-              {{ syncStatus.isRunning ? 'Syncing...' : 'Force resync all' }}
+              Force resync all
             </a>
             <a
               v-if="currentRepoName && isCurrentRepoIndexed"
@@ -295,7 +318,7 @@ function getTimeAgo(timestamp: number): string {
               :class="{ disabled: syncStatus.isRunning }"
               @click.prevent="!syncStatus.isRunning && triggerSync(currentRepoName)"
             >
-              {{ syncStatus.isRunning ? 'Syncing...' : `Force resync ${currentRepoName}` }}
+              Force resync {{ currentRepoName }}
             </a>
           </div>
         </div>
