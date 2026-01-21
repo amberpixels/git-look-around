@@ -217,11 +217,7 @@ import { getUniqueOrganizations, type CategorizedOrganizations } from '@/src/sto
 import { MessageType } from '@/src/messages/types';
 import type { ExtensionMessage } from '@/src/messages/types';
 import { debugLog } from '@/src/utils/debug';
-import {
-  startDeviceFlow,
-  completeDeviceFlow,
-  signOut as oauthSignOut,
-} from '@/src/auth/oauth-service';
+import { startDeviceFlow, completeDeviceFlow } from '@/src/auth/oauth-service';
 import { getUserOrganizations } from '@/src/api/github';
 
 const tokenInput = ref('');
@@ -423,17 +419,6 @@ async function saveToken() {
     tokenSaved.value = false;
     console.error(e);
   }
-}
-
-async function logout() {
-  await removeGitHubToken();
-  await removeAuthMetadata();
-  isAuthenticated.value = false;
-  authMethod.value = null;
-  authMetadata.value = null;
-  tokenInput.value = '';
-  error.value = '';
-  tokenSaved.value = false;
 }
 
 function handleTokenFocus() {
