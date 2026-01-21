@@ -6,7 +6,10 @@
       excluded.
     </p>
 
-    <div v-if="myOrgs.length === 0 && contributingOrgs.length === 0 && forkSourceOrgs.length === 0" class="empty-state">
+    <div
+      v-if="myOrgs.length === 0 && contributingOrgs.length === 0 && forkSourceOrgs.length === 0"
+      class="empty-state"
+    >
       <p>Loading organizations...</p>
     </div>
 
@@ -156,13 +159,23 @@ const forkSourceOrgsSelectedCount = computed(() => {
 
 // Computed: check if all/some/none are selected
 const allMyOrgsSelected = computed(() => myOrgsSelectedCount.value === props.myOrgs.length);
-const someMyOrgsSelected = computed(() => myOrgsSelectedCount.value > 0 && !allMyOrgsSelected.value);
+const someMyOrgsSelected = computed(
+  () => myOrgsSelectedCount.value > 0 && !allMyOrgsSelected.value,
+);
 
-const allContributingOrgsSelected = computed(() => contributingOrgsSelectedCount.value === props.contributingOrgs.length);
-const someContributingOrgsSelected = computed(() => contributingOrgsSelectedCount.value > 0 && !allContributingOrgsSelected.value);
+const allContributingOrgsSelected = computed(
+  () => contributingOrgsSelectedCount.value === props.contributingOrgs.length,
+);
+const someContributingOrgsSelected = computed(
+  () => contributingOrgsSelectedCount.value > 0 && !allContributingOrgsSelected.value,
+);
 
-const allForkSourceOrgsSelected = computed(() => forkSourceOrgsSelectedCount.value === props.forkSourceOrgs.length);
-const someForkSourceOrgsSelected = computed(() => forkSourceOrgsSelectedCount.value > 0 && !allForkSourceOrgsSelected.value);
+const allForkSourceOrgsSelected = computed(
+  () => forkSourceOrgsSelectedCount.value === props.forkSourceOrgs.length,
+);
+const someForkSourceOrgsSelected = computed(
+  () => forkSourceOrgsSelectedCount.value > 0 && !allForkSourceOrgsSelected.value,
+);
 
 // Set indeterminate state on checkboxes
 watchEffect(() => {

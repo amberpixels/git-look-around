@@ -357,7 +357,10 @@ export interface OrgMembership {
  * Get user's membership role in an organization
  * Returns 'admin' (owner) or 'member'
  */
-export async function getOrgMembership(orgName: string, username: string): Promise<OrgMembership | null> {
+export async function getOrgMembership(
+  orgName: string,
+  username: string,
+): Promise<OrgMembership | null> {
   try {
     const response = await githubFetch(`/orgs/${orgName}/memberships/${username}`);
     const data = await response.json();
@@ -377,9 +380,7 @@ export async function getOrgMembership(orgName: string, username: string): Promi
  */
 export async function getAllOrgMemberships(username: string): Promise<OrgMembership[]> {
   const orgs = await getUserOrganizations();
-  const memberships = await Promise.all(
-    orgs.map(org => getOrgMembership(org.login, username))
-  );
+  const memberships = await Promise.all(orgs.map((org) => getOrgMembership(org.login, username)));
   return memberships.filter((m): m is OrgMembership => m !== null);
 }
 

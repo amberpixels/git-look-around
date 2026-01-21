@@ -3,7 +3,7 @@
     <div class="tags-wrapper" :class="{ focused: isFocused }" @click="focusInput">
       <div v-for="(tag, index) in modelValue" :key="index" class="tag">
         <span class="tag-text">{{ tag }}</span>
-        <button class="tag-remove" type="button" @click.stop="removeTag(index)" aria-label="Remove">
+        <button class="tag-remove" type="button" aria-label="Remove" @click.stop="removeTag(index)">
           ×
         </button>
       </div>
@@ -128,7 +128,9 @@ function focusInput() {
   border-radius: 6px;
   background: var(--bg-primary);
   cursor: text;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .tags-wrapper.focused {
