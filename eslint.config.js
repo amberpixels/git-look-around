@@ -35,6 +35,7 @@ export default tseslint.config(
         MouseEvent: 'readonly',
         KeyboardEvent: 'readonly',
         HTMLElement: 'readonly',
+        HTMLInputElement: 'readonly',
         // Browser extension APIs
         browser: 'readonly',
         chrome: 'readonly',
