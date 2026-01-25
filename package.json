@@ -2,7 +2,7 @@
   "name": "git-look-around",
   "description": "GitHub Look-Around browser extension",
   "private": true,
-  "version": "0.3.1",
+  "version": "0.3.2",
   "type": "module",
   "scripts": {
     "dev": "NODE_OPTIONS='--no-webstorage' wxt",

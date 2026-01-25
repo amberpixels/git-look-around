@@ -6,7 +6,7 @@ export default defineConfig({
   manifest: {
     name: 'GitHub Look-Around',
     description: 'Lightning-fast Github Command Palette to repos, PRs, and issues',
-    version: '0.3.1',
+    version: '0.3.2',
     permissions: ['storage'],
     commands: {
       'toggle-overlay': {
