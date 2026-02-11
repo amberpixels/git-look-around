@@ -163,6 +163,7 @@
       :contributing-orgs="availableOrgs.contributingOrgs"
       :fork-source-orgs="availableOrgs.forkSourceOrgs"
       :filters="orgFilterPreferences"
+      :loading="orgsLoading"
       @update:filters="orgFilterPreferences = $event"
       @save="saveOrgFilters"
     />
@@ -209,6 +210,7 @@ import {
   type OrgFilterPreferences,
   getAuthMetadata,
   getAuthMethod,
+  getMyOrgsFromAPI,
   saveAuthMetadata,
   removeAuthMetadata,
   type AuthMetadata,
@@ -248,6 +250,7 @@ const orgFilterPreferences = ref<OrgFilterPreferences>({
   enabledOrgs: {},
 });
 const orgFilterSaved = ref(false);
+const orgsLoading = ref(true);
 
 // OAuth Device Flow state
 const oauthLoading = ref(false);
@@ -282,6 +285,15 @@ onMounted(async () => {
   authMethod.value = await getAuthMethod();
   authMetadata.value = await getAuthMetadata();
 
+  // Diagnostic: log auth state on page load to debug OAuth issues
+  console.warn('[Options] Auth state on load:', {
+    hasToken: !!token,
+    tokenPrefix: token ? token.substring(0, 4) + '...' : null,
+    authMethod: authMethod.value,
+    hasMetadata: !!authMetadata.value,
+    metadataRaw: authMetadata.value,
+  });
+
   // Show masked token if exists and using PAT
   if (token && authMethod.value === 'pat') {
     actualToken.value = token;
@@ -302,7 +314,15 @@ onMounted(async () => {
     // Load GitHub user info first (needed to build myOrgs list)
     if (authMethod.value === 'oauth' || authMethod.value === 'pat') {
       await loadGitHubUserInfo();
+      console.warn('[Options] githubUser after load:', githubUser.value);
       await fetchOrganizationsFromAPI();
+      console.warn('[Options] availableOrgs after load:', {
+        myOrgs: availableOrgs.value.myOrgs,
+        contributingOrgs: availableOrgs.value.contributingOrgs,
+        forkSourceOrgs: availableOrgs.value.forkSourceOrgs,
+      });
+    } else {
+      console.warn('[Options] Skipping user/org load - authMethod is:', authMethod.value);
     }
 
     orgFilterPreferences.value = await getOrgFilterPreferences();
@@ -323,6 +343,7 @@ onMounted(async () => {
       }
     }
   }
+  orgsLoading.value = false;
 
   // Load keyboard shortcut
   await loadShortcut();
@@ -339,8 +360,8 @@ onMounted(async () => {
 async function reloadOrganizations() {
   if (!isAuthenticated.value) return;
 
-  // Get my orgs from current state (or re-fetch from API if needed)
-  const myOrgsFromAPI = availableOrgs.value.myOrgs.length > 0 ? availableOrgs.value.myOrgs : [];
+  // Always read myOrgsFromAPI from storage (populated by fetchOrganizationsFromAPI or engine)
+  const myOrgsFromAPI = await getMyOrgsFromAPI();
 
   availableOrgs.value = await getUniqueOrganizations(myOrgsFromAPI);
   orgFilterPreferences.value = await getOrgFilterPreferences();
@@ -522,12 +543,15 @@ async function handleOAuthSignIn() {
       authMetadata.value = await getAuthMetadata();
       deviceFlowActive.value = false;
 
+      console.warn('[Options] OAuth completed. metadata from storage:', authMetadata.value);
+
       // Clear PAT input if switching from PAT
       tokenInput.value = '';
       actualToken.value = '';
 
       // Load GitHub user info
       await loadGitHubUserInfo();
+      console.warn('[Options] OAuth: githubUser after load:', githubUser.value);
 
       // Load organizations from GitHub API
       await fetchOrganizationsFromAPI();
@@ -596,6 +620,8 @@ async function loadGitHubUserInfo() {
         login: userData.login,
         avatar_url: userData.avatar_url,
       };
+    } else {
+      console.warn('[Options] /user API returned non-OK status:', userResponse.status);
     }
   } catch (error) {
     console.error('[Options] Failed to load GitHub user info:', error);
