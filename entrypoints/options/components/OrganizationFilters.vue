@@ -10,7 +10,10 @@
       v-if="myOrgs.length === 0 && contributingOrgs.length === 0 && forkSourceOrgs.length === 0"
       class="empty-state"
     >
-      <p>Loading organizations...</p>
+      <p v-if="loading">Loading organizations...</p>
+      <p v-else>
+        No organizations found yet. Organizations will appear after the initial sync completes.
+      </p>
     </div>
 
     <div v-else class="org-columns">
@@ -118,6 +121,7 @@ interface Props {
   contributingOrgs: string[];
   forkSourceOrgs: string[];
   filters: OrgFilterPreferences;
+  loading?: boolean;
 }
 
 interface Emits {
@@ -125,7 +129,9 @@ interface Emits {
   (e: 'save'): void;
 }
 
-const props = defineProps<Props>();
+const props = withDefaults(defineProps<Props>(), {
+  loading: false,
+});
 const emit = defineEmits<Emits>();
 
 const localFilters = ref<OrgFilterPreferences>({ ...props.filters });
