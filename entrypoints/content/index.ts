@@ -170,24 +170,36 @@ export default defineContentScript({
     const { getHotkeyPreferences } = await import('@/src/storage/chrome');
     const hotkeyPrefs = await getHotkeyPreferences();
 
-    const currentHost = window.location.hostname;
+    const currentHost = window.location.host; // includes port if non-standard
+    const currentHostname = window.location.hostname;
     let shouldRun = false;
 
     if (hotkeyPrefs.mode === 'github-only') {
       // Only run on GitHub and Gist
-      shouldRun = currentHost === 'github.com' || currentHost.endsWith('.github.com');
+      shouldRun = currentHostname === 'github.com' || currentHostname.endsWith('.github.com');
     } else if (hotkeyPrefs.mode === 'custom-hosts') {
       // Check if current host matches any custom pattern (GitHub is always included)
       shouldRun =
-        currentHost === 'github.com' ||
-        currentHost.endsWith('.github.com') ||
+        currentHostname === 'github.com' ||
+        currentHostname.endsWith('.github.com') ||
         hotkeyPrefs.customHosts.some((pattern) => {
+          // Strip path component — only match against host(:port)
+          const hostPattern = pattern.split('/')[0];
           // Convert wildcard pattern to regex
-          const regexPattern = pattern
+          const regexPattern = hostPattern
             .replace(/\./g, '\\.')
             .replace(/\*/g, '.*')
             .replace(/^(.*)$/, '^$1$');
-          return new RegExp(regexPattern).test(currentHost);
+          const regex = new RegExp(regexPattern);
+          // Match against host (includes port for non-standard ports)
+          if (regex.test(currentHost)) return true;
+          // For bare domains (no wildcard), also match subdomains
+          // e.g. "notion.so" should match "www.notion.so"
+          if (!hostPattern.includes('*')) {
+            const subdomainRegex = new RegExp(`\\.${regexPattern.slice(1)}`);
+            return subdomainRegex.test(currentHost);
+          }
+          return false;
         });
     }
 
