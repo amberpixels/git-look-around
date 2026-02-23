@@ -142,7 +142,9 @@ export default defineBackground(() => {
           const message: ExtensionMessage = {
             type: MessageType.TOGGLE_OVERLAY,
           };
-          browser.tabs.sendMessage(tabs[0].id, message);
+          browser.tabs.sendMessage(tabs[0].id, message).catch(() => {
+            // Content script not active on this tab — expected on non-matching hosts
+          });
         }
       });
     }
