@@ -163,6 +163,44 @@ async function detectAndRecordVisit() {
   }
 }
 
+function isGitHubHost(hostname: string): boolean {
+  return hostname === 'github.com' || hostname.endsWith('.github.com');
+}
+
+/**
+ * Normalize a user-entered host pattern:
+ *   "https://www.notion.so/some/path" → "www.notion.so"
+ *   "notion.so"                       → "notion.so"
+ *   "localhost:3000/*"                → "localhost:3000"
+ */
+function normalizeHostPattern(raw: string): string {
+  let p = raw.trim();
+  p = p.replace(/^https?:\/\//, '');
+  p = p.replace(/\/.*$/, '');
+  return p;
+}
+
+/**
+ * Match a user-entered pattern against the current page's host.
+ *
+ * Rules (no implicit subdomain matching):
+ *   "notion.so"       → exact match on notion.so only
+ *   "*.notion.so"     → any subdomain of notion.so (not bare notion.so)
+ *   "localhost:3000"  → exact match including port
+ */
+function matchesHostPattern(raw: string, hostname: string, host: string): boolean {
+  const pattern = normalizeHostPattern(raw);
+  if (!pattern) return false;
+
+  const regexStr = pattern
+    .replace(/\./g, '\\.')
+    .replace(/\*/g, '[^.]+');
+  const regex = new RegExp(`^${regexStr}$`);
+
+  // Try host (with port) first, then hostname (without port)
+  return regex.test(host) || regex.test(hostname);
+}
+
 export default defineContentScript({
   matches: ['*://*/*'], // Match all sites initially, will filter in main()
   async main(_ctx) {
@@ -175,32 +213,13 @@ export default defineContentScript({
     let shouldRun = false;
 
     if (hotkeyPrefs.mode === 'github-only') {
-      // Only run on GitHub and Gist
-      shouldRun = currentHostname === 'github.com' || currentHostname.endsWith('.github.com');
+      shouldRun = isGitHubHost(currentHostname);
     } else if (hotkeyPrefs.mode === 'custom-hosts') {
-      // Check if current host matches any custom pattern (GitHub is always included)
       shouldRun =
-        currentHostname === 'github.com' ||
-        currentHostname.endsWith('.github.com') ||
-        hotkeyPrefs.customHosts.some((pattern) => {
-          // Strip path component — only match against host(:port)
-          const hostPattern = pattern.split('/')[0];
-          // Convert wildcard pattern to regex
-          const regexPattern = hostPattern
-            .replace(/\./g, '\\.')
-            .replace(/\*/g, '.*')
-            .replace(/^(.*)$/, '^$1$');
-          const regex = new RegExp(regexPattern);
-          // Match against host (includes port for non-standard ports)
-          if (regex.test(currentHost)) return true;
-          // For bare domains (no wildcard), also match subdomains
-          // e.g. "notion.so" should match "www.notion.so"
-          if (!hostPattern.includes('*')) {
-            const subdomainRegex = new RegExp(`\\.${regexPattern.slice(1)}`);
-            return subdomainRegex.test(currentHost);
-          }
-          return false;
-        });
+        isGitHubHost(currentHostname) ||
+        hotkeyPrefs.customHosts.some((pattern) =>
+          matchesHostPattern(pattern, currentHostname, currentHost),
+        );
     }
 
     if (!shouldRun) {
