@@ -109,6 +109,49 @@
           </svg>
           <span class="filter-label">{{ showOnlyVisited ? 'Visited' : 'All' }}</span>
         </button>
+        <!-- Filter: PR/Issue state (any → open → closed) -->
+        <button
+          class="filter-button"
+          :class="{ active: stateFilter !== 'any' }"
+          :title="
+            stateFilter === 'any'
+              ? 'Showing open and closed items (click to show only open)'
+              : stateFilter === 'open'
+                ? 'Showing only open items (click to show only closed)'
+                : 'Showing only closed items (click to show open and closed)'
+          "
+          @click="toggleStateFilter"
+        >
+          <!-- Open icon (issue-opened octicon) -->
+          <svg
+            viewBox="0 0 16 16"
+            width="16"
+            height="16"
+            :class="{ dimmed: stateFilter === 'closed' }"
+          >
+            <path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z" />
+            <path
+              d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"
+            />
+          </svg>
+          <!-- Closed icon (issue-closed octicon) -->
+          <svg
+            viewBox="0 0 16 16"
+            width="16"
+            height="16"
+            :class="{ dimmed: stateFilter === 'open' }"
+          >
+            <path
+              d="M11.28 6.78a.75.75 0 0 0-1.06-1.06L7.25 8.69 5.78 7.22a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l3.5-3.5Z"
+            />
+            <path
+              d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0Zm-1.5 0a6.5 6.5 0 1 0-13 0 6.5 6.5 0 0 0 13 0Z"
+            />
+          </svg>
+          <span class="filter-label">{{
+            stateFilter === 'any' ? 'Any' : stateFilter === 'open' ? 'Open' : 'Closed'
+          }}</span>
+        </button>
       </div>
 
       <!-- (2) Main content: unified results list -->
@@ -497,6 +540,10 @@ const showOnlyMyContributions = ref(true); // Enabled by default
 // Filter: Only show visited items
 const showOnlyVisited = ref(false); // Disabled by default
 
+// Filter: PR/issue state (any = don't care)
+type StateFilter = 'any' | 'open' | 'closed';
+const stateFilter = ref<StateFilter>('any'); // Any by default
+
 // Cached contributors (loaded immediately for instant button display)
 const cachedContributors = ref<string[]>([]);
 
@@ -796,6 +843,15 @@ const filteredResults = computed(() => {
 
       // Show only items that have been visited
       return item.lastVisitedAt != null;
+    });
+  }
+
+  // Apply state filter (open/closed applies to PRs and issues; repos always pass)
+  if (stateFilter.value !== 'any') {
+    results = results.filter((item) => {
+      if (item.type === 'skeleton' || item.type === 'repo') return true;
+
+      return item.state === stateFilter.value;
     });
   }
 
@@ -1541,6 +1597,17 @@ function toggleVisitedFilter() {
 }
 
 /**
+ * Toggle state filter: any → open → closed → any
+ */
+function toggleStateFilter() {
+  const next: Record<StateFilter, StateFilter> = { any: 'open', open: 'closed', closed: 'any' };
+  stateFilter.value = next[stateFilter.value];
+  // Save to local storage
+  browser.storage.local.set({ stateFilter: stateFilter.value });
+  debugLogSync('[CommandPalette] State filter:', stateFilter.value);
+}
+
+/**
  * Handle repo link click - close palette on regular click
  * But keep open for middle-click or Cmd/Ctrl+click (new tab)
  */
@@ -1721,12 +1788,16 @@ onMounted(async () => {
   const filterPrefs = await browser.storage.local.get([
     'showOnlyMyContributions',
     'showOnlyVisited',
+    'stateFilter',
   ]);
   if (filterPrefs.showOnlyMyContributions !== undefined) {
     showOnlyMyContributions.value = filterPrefs.showOnlyMyContributions as boolean;
   }
   if (filterPrefs.showOnlyVisited !== undefined) {
     showOnlyVisited.value = filterPrefs.showOnlyVisited as boolean;
+  }
+  if (filterPrefs.stateFilter !== undefined) {
+    stateFilter.value = filterPrefs.stateFilter as StateFilter;
   }
 
   // Silently load data in background so it's ready when user opens overlay
@@ -1985,6 +2056,11 @@ defineExpose({
 
 .filter-button:hover svg {
   fill: var(--fgColor-accent);
+}
+
+/* State filter: dim the icon of the state that's filtered out */
+.filter-button svg.dimmed {
+  opacity: 0.3;
 }
 
 /* (2) Main content area */
