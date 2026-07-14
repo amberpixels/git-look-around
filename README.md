@@ -1,54 +1,59 @@
-# GitHub Look-Around
+<p align="center">
+  <img src="logo.svg" alt="GitHub Look-Around" width="460">
+</p>
 
-> Lightning-fast command palette for GitHub repos, PRs, and issues.
+<div align="center">
 
-A Chrome/Firefox extension that adds a command palette to GitHub so you can jump to repos, pull requests, and issues without losing your flow. It syncs your GitHub data in the background, shows rate-limit awareness, and stays out of the way until you hit the shortcut.
+### Your whole GitHub, one keystroke away.
 
-## What it does
+A command-palette browser extension for fuzzy-jumping across GitHub repos, pull requests, and issues.
 
-- Toggle the overlay with `Cmd+Shift+K` (macOS) or `Ctrl+Shift+K` (Linux/Windows) from any GitHub page.
-- Fuzzy search across repos, PRs, and issues with a single input and ghost-text suggestions for the top hit.
-- Filter to just your contributions or items you have visited; per-repo badges show PR/issue counts at a glance.
-- Popup panel shows sync status, rate limits, and lets you reload or jump to options.
+[![Chrome Web Store](https://img.shields.io/chrome-web-store/v/dfccngcojkfnbjmocdicmobjhhkbopco)](https://chromewebstore.google.com/detail/github-look-around/dfccngcojkfnbjmocdicmobjhhkbopco)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
-## Demo
+</div>
 
-_Video demo coming soon - check back for a live demo!_
+---
+
+GitHub Look-Around adds an IDE-style quick switcher to GitHub: hit the shortcut, type a few characters, land on the repo, PR, or issue you meant. It syncs your GitHub data locally in the background, learns which places you actually visit, and ranks results accordingly - so your everyday destinations float to the top.
 
 ![Command Palette in action](https://amberpixels.io/git-look-around/screenshot1-chrome.png)
 ![Search and navigation](https://amberpixels.io/git-look-around/screenshot2-chrome.png)
 
-[View more on the Chrome Web Store →](https://chromewebstore.google.com/detail/github-look-around/dfccngcojkfnbjmocdicmobjhhkbopco)
+## Install
 
-## Why this palette?
+Grab it from the [Chrome Web Store](https://chromewebstore.google.com/detail/github-look-around/dfccngcojkfnbjmocdicmobjhhkbopco), or build from source (see [Development](#development)).
 
-- GitHub's feature-preview Command Palette is heavier and broader; GitHub Look-Around stays lightweight and focused on fast search + navigation.
-- Everything is reactive: as soon as sync finishes, repo/PR/issue results update without reloading GitHub.
-- Quick hop back to recent places (visited filter), inspired by the fast-switcher experience in modern IDEs.
+More at the [landing page](https://amberpixels.io/git-look-around).
 
-## Download & Links
+## Usage
 
-- Chrome Web Store: https://chromewebstore.google.com/detail/github-look-around/dfccngcojkfnbjmocdicmobjhhkbopco
-- Firefox Add-ons: Coming soon ([track progress](https://github.com/amberpixels/git-look-around/issues/1))
-- Landing page: https://amberpixels.io/git-look-around
-- Source & updates: https://github.com/amberpixels/git-look-around
-- Keyboard shortcuts: `chrome://extensions/shortcuts` lets you remap the toggle command if you prefer a different combo.
-- Questions or support? Open an issue on GitHub.
+- **Toggle the palette** with `Cmd+Shift+K` (macOS) or `Ctrl+Shift+K` (Linux/Windows) on any GitHub page. Remap it anytime at `chrome://extensions/shortcuts`.
+- **Fuzzy search** repos, PRs, and issues from a single input, with ghost-text completion for the top hit.
+- **Filter** to your contributions or recently visited items; per-repo badges show open PR/issue counts at a glance.
+- **Popup panel** shows sync status and API rate limits, and lets you force a sync or jump to options.
 
-## Coming soon
+## How It Works
 
-- [Firefox support](https://github.com/amberpixels/git-look-around/issues/1) - tested, release packaging in progress
-- VIM mode - modal hotkeys for faster keyboard-only navigation
+Built with Vue 3 + WXT. A background worker indexes your repos, pull requests, and issues into IndexedDB, so search and ranking run entirely in your browser. The content script mounts the palette directly on GitHub pages, and results update reactively as sync progresses - no page reloads.
 
-## Under the hood
-
-- Built with Vue 3 + WXT; background workers index your GitHub repos, pull requests, and issues for fast local filtering.
-- Content script mounts the command palette UI directly on GitHub; the popup detects the current repo and lets you force a sync if needed.
-- Icons and branding come from the extension bundle; keep assets under `/git-look-around/` when updating this page.
+Everything stays local: your token lives in browser extension storage and talks only to the GitHub API. No third-party servers, no analytics ([privacy policy](PRIVACY_POLICY.md)).
 
 ## Development
 
-- Requirements: Node 18.17+ (or 20+), pnpm 9+.
-- Install deps: `pnpm install`
-- Dev: `pnpm dev` (Chrome) or `pnpm dev:firefox`
-- Build: `pnpm build` or `pnpm build:firefox`
+Requires Node 18.17+ and pnpm.
+
+```bash
+pnpm install
+pnpm dev      # dev mode with hot reload
+pnpm build    # production build into .output/
+pnpm compile  # typecheck only
+```
+
+## Feedback
+
+GitHub Look-Around is a solo, opinionated project - but if you stumbled upon it and have ideas, questions, or bug reports, an [issue](https://github.com/amberpixels/git-look-around/issues) is always welcome :)
+
+## License
+
+[MIT](LICENSE) © [amberpixels](https://amberpixels.io)
