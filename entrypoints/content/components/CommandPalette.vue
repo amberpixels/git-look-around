@@ -1890,19 +1890,28 @@ defineExpose({
 .search-input {
   flex: 1;
   min-width: 0;
+  margin: 0;
   padding: 0;
+  height: auto;
   font-size: 14px;
   font-weight: 400;
-  border: none;
-  outline: none;
+  /* !important guards against host-page input styles leaking in
+     (we mount into the page DOM, not a shadow root) */
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
   font-family: inherit;
-  background: transparent;
+  background: transparent !important;
   color: var(--fgColor-default);
   line-height: 20px;
 }
 
 .search-input::placeholder {
-  color: var(--fgColor-muted);
+  color: var(--fgColor-muted) !important;
+  opacity: 1;
 }
 
 /* Filter button */
