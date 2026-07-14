@@ -19,21 +19,21 @@
     "postinstall": "NODE_OPTIONS='--no-webstorage' wxt prepare"
   },
   "dependencies": {
-    "vue": "^3.5.21"
+    "vue": "^3.5.39"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.1",
-    "@types/node": "^24.10.1",
-    "@wxt-dev/module-vue": "^1.0.2",
-    "eslint": "^9.39.1",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.1.1",
+    "@wxt-dev/module-vue": "^1.0.3",
+    "eslint": "^10.7.0",
     "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-prettier": "^5.5.4",
-    "eslint-plugin-vue": "^10.5.1",
-    "prettier": "^3.6.2",
-    "typescript": "^5.9.2",
-    "typescript-eslint": "^8.46.4",
-    "vue-eslint-parser": "^10.2.0",
-    "vue-tsc": "^3.0.6",
-    "wxt": "^0.20.6"
+    "eslint-plugin-prettier": "^5.5.6",
+    "eslint-plugin-vue": "^10.9.2",
+    "prettier": "^3.9.5",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.63.0",
+    "vue-eslint-parser": "^10.4.1",
+    "vue-tsc": "^3.3.7",
+    "wxt": "^0.20.27"
   }
 }

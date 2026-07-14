@@ -192,9 +192,7 @@ function matchesHostPattern(raw: string, hostname: string, host: string): boolea
   const pattern = normalizeHostPattern(raw);
   if (!pattern) return false;
 
-  const regexStr = pattern
-    .replace(/\./g, '\\.')
-    .replace(/\*/g, '[^.]+');
+  const regexStr = pattern.replace(/\./g, '\\.').replace(/\*/g, '[^.]+');
   const regex = new RegExp(`^${regexStr}$`);
 
   // Try host (with port) first, then hostname (without port)

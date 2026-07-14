@@ -65,7 +65,7 @@ export async function saveGitHubToken(token: string): Promise<void> {
  */
 export async function getGitHubToken(): Promise<string | null> {
   const result = await browser.storage.local.get(STORAGE_KEYS.GITHUB_TOKEN);
-  return result[STORAGE_KEYS.GITHUB_TOKEN] || null;
+  return (result[STORAGE_KEYS.GITHUB_TOKEN] as string | undefined) || null;
 }
 
 /**
@@ -97,7 +97,7 @@ export async function saveAuthMetadata(metadata: AuthMetadata): Promise<void> {
  */
 export async function getAuthMetadata(): Promise<AuthMetadata | null> {
   const result = await browser.storage.local.get(STORAGE_KEYS.AUTH_METADATA);
-  return result[STORAGE_KEYS.AUTH_METADATA] || null;
+  return (result[STORAGE_KEYS.AUTH_METADATA] as AuthMetadata | undefined) || null;
 }
 
 /**
@@ -184,7 +184,7 @@ export async function saveHotkeyPreferences(preferences: HotkeyPreferences): Pro
  */
 export async function getDebugMode(): Promise<boolean> {
   const result = await browser.storage.local.get(STORAGE_KEYS.DEBUG_MODE);
-  return result[STORAGE_KEYS.DEBUG_MODE] ?? false;
+  return (result[STORAGE_KEYS.DEBUG_MODE] as boolean | undefined) ?? false;
 }
 
 /**
