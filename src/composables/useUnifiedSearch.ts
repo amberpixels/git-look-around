@@ -427,9 +427,8 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
    * 2. For short queries (≤2 chars): Repos before PRs/Issues within same score
    * 3. Within same score tier and type: visited items first (by last_visited_at DESC)
    * 4. For never-visited items within same tier: State (Open/Repo > Closed)
-   * 5. isMine (Authored/Owned by me)
-   * 6. recentlyContributedByMe (Contributed in last 2 months)
-   * 7. Updated At (DESC)
+   * 5. Repos only: isMine (Owned by me), then recentlyContributedByMe (last 2 months)
+   * 6. Updated At (DESC)
    */
   function sortResults(
     results: SearchResultItem[],
@@ -477,14 +476,17 @@ export function useUnifiedSearch(currentUsername?: Ref<string | undefined> | str
       if (isOpenA && !isOpenB) return -1; // A open, B closed → A first
       if (!isOpenA && isOpenB) return 1; // B open, A closed → B first
 
-      // isMine (Authored/Owned by me)
-      if (a.isMine !== b.isMine) {
-        return a.isMine ? -1 : 1;
-      }
+      // isMine / recentlyContributedByMe boost repos only: for PRs/Issues it would
+      // wall off everyone else's items in repos with many PRs of mine ("Just me"
+      // mode already filters to mine, so the boost is redundant there anyway)
+      if (a.type === 'repo' && b.type === 'repo') {
+        if (a.isMine !== b.isMine) {
+          return a.isMine ? -1 : 1;
+        }
 
-      // recentlyContributedByMe
-      if (a.recentlyContributedByMe !== b.recentlyContributedByMe) {
-        return a.recentlyContributedByMe ? -1 : 1;
+        if (a.recentlyContributedByMe !== b.recentlyContributedByMe) {
+          return a.recentlyContributedByMe ? -1 : 1;
+        }
       }
 
       // Final tiebreaker: sort by updated_at DESC
