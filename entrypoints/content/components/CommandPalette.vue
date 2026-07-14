@@ -1574,8 +1574,6 @@ function formatRepoMeta(repoId: number): {
   if (!repo) return { left: '—', right: '' };
 
   let left = '';
-  let leftAvatar: string | undefined;
-  let leftAvatarTitle: string | undefined;
   let right = '';
   let rightAvatar: string | undefined;
 
@@ -1606,7 +1604,7 @@ function formatRepoMeta(repoId: number): {
     }
   }
 
-  return { left: left || '—', leftAvatar, leftAvatarTitle, right, rightAvatar };
+  return { left: left || '—', right, rightAvatar };
 }
 
 /**
@@ -1725,10 +1723,10 @@ onMounted(async () => {
     'showOnlyVisited',
   ]);
   if (filterPrefs.showOnlyMyContributions !== undefined) {
-    showOnlyMyContributions.value = filterPrefs.showOnlyMyContributions;
+    showOnlyMyContributions.value = filterPrefs.showOnlyMyContributions as boolean;
   }
   if (filterPrefs.showOnlyVisited !== undefined) {
-    showOnlyVisited.value = filterPrefs.showOnlyVisited;
+    showOnlyVisited.value = filterPrefs.showOnlyVisited as boolean;
   }
 
   // Silently load data in background so it's ready when user opens overlay
