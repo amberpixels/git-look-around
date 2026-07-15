@@ -23,7 +23,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick } from 'vue';
+import { ref, nextTick, onMounted, onBeforeUnmount } from 'vue';
 
 interface Props {
   modelValue: string[];
@@ -110,6 +110,23 @@ function handleBlur() {
 function focusInput() {
   inputRef.value?.focus();
 }
+
+// When the embedded options dialog (chrome://extensions) closes, the page gets
+// no blur/pagehide/beforeunload — only visibilitychange to "hidden". Commit any
+// pending input here or text typed without pressing Enter is silently lost.
+function handleVisibilityChange() {
+  if (document.visibilityState === 'hidden' && inputValue.value.trim()) {
+    addTag(inputValue.value);
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', handleVisibilityChange);
+});
 </script>
 
 <style scoped>
