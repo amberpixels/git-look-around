@@ -192,6 +192,8 @@
               'state-merged': item.merged,
               'state-closed': item.state === 'closed' && !item.merged,
             }"
+            @click="handleRowClick($event, item)"
+            @auxclick="handleRowAuxClick($event, item)"
           >
             <!-- Skeleton result (placeholder while loading) -->
             <template v-if="item.type === 'skeleton'">
@@ -242,7 +244,7 @@
               </div>
               <div class="result-content">
                 <div class="result-title-row">
-                  <a :href="item.url" class="result-title" @click="handleRepoClick">
+                  <a :href="item.url" class="result-title" @click.stop="handleRepoClick" @auxclick.stop>
                     {{ formatRepoName(item.title) }}
                   </a>
                   <div
@@ -333,20 +335,27 @@
                 </svg>
               </div>
               <div class="result-content" :class="{ 'compact-layout': !!repoFilter }">
-                <a :href="item.url" class="result-title" @click="handleRepoClick">
+                <a :href="item.url" class="result-title" @click.stop="handleRepoClick" @auxclick.stop>
                   <span class="result-number">#{{ item.number }}</span>
                   {{ item.title }}
                 </a>
                 <div class="result-meta">
                   <!-- Avatar display: creator or creator->assignee -->
                   <div v-if="item.user" class="avatar-container">
-                    <!-- Show creator avatar -->
-                    <img
-                      :src="item.user.avatar_url"
-                      :alt="item.user.login"
-                      :title="`Opened by @${item.user.login}`"
-                      class="user-avatar"
-                    />
+                    <!-- Show creator avatar (links to their profile) -->
+                    <a
+                      :href="`https://github.com/${item.user.login}`"
+                      class="avatar-link"
+                      @click.stop="handleRepoClick"
+                      @auxclick.stop
+                    >
+                      <img
+                        :src="item.user.avatar_url"
+                        :alt="item.user.login"
+                        :title="`Opened by @${item.user.login}`"
+                        class="user-avatar"
+                      />
+                    </a>
                     <!-- Show arrow and assignee avatar if assignee exists and differs from creator -->
                     <template v-if="item.assignee && item.assignee.login !== item.user.login">
                       <svg class="avatar-arrow" viewBox="0 0 16 16" width="12" height="12">
@@ -355,12 +364,19 @@
                           d="M8.22 2.97a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06l2.97-2.97H3.75a.75.75 0 0 1 0-1.5h7.44L8.22 4.03a.75.75 0 0 1 0-1.06Z"
                         />
                       </svg>
-                      <img
-                        :src="item.assignee.avatar_url"
-                        :alt="item.assignee.login"
-                        :title="`Assigned to @${item.assignee.login}`"
-                        class="user-avatar"
-                      />
+                      <a
+                        :href="`https://github.com/${item.assignee.login}`"
+                        class="avatar-link"
+                        @click.stop="handleRepoClick"
+                        @auxclick.stop
+                      >
+                        <img
+                          :src="item.assignee.avatar_url"
+                          :alt="item.assignee.login"
+                          :title="`Assigned to @${item.assignee.login}`"
+                          class="user-avatar"
+                        />
+                      </a>
                     </template>
                   </div>
                   <span v-if="!repoFilter" class="repo-parent"
@@ -387,20 +403,27 @@
                 </svg>
               </div>
               <div class="result-content" :class="{ 'compact-layout': !!repoFilter }">
-                <a :href="item.url" class="result-title" @click="handleRepoClick">
+                <a :href="item.url" class="result-title" @click.stop="handleRepoClick" @auxclick.stop>
                   <span class="result-number">#{{ item.number }}</span>
                   {{ item.title }}
                 </a>
                 <div class="result-meta">
                   <!-- Avatar display: creator or creator->assignee -->
                   <div v-if="item.user" class="avatar-container">
-                    <!-- Show creator avatar -->
-                    <img
-                      :src="item.user.avatar_url"
-                      :alt="item.user.login"
-                      :title="`Opened by @${item.user.login}`"
-                      class="user-avatar"
-                    />
+                    <!-- Show creator avatar (links to their profile) -->
+                    <a
+                      :href="`https://github.com/${item.user.login}`"
+                      class="avatar-link"
+                      @click.stop="handleRepoClick"
+                      @auxclick.stop
+                    >
+                      <img
+                        :src="item.user.avatar_url"
+                        :alt="item.user.login"
+                        :title="`Opened by @${item.user.login}`"
+                        class="user-avatar"
+                      />
+                    </a>
                     <!-- Show arrow and assignee avatar if assignee exists and differs from creator -->
                     <template v-if="item.assignee && item.assignee.login !== item.user.login">
                       <svg class="avatar-arrow" viewBox="0 0 16 16" width="12" height="12">
@@ -409,12 +432,19 @@
                           d="M8.22 2.97a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06l2.97-2.97H3.75a.75.75 0 0 1 0-1.5h7.44L8.22 4.03a.75.75 0 0 1 0-1.06Z"
                         />
                       </svg>
-                      <img
-                        :src="item.assignee.avatar_url"
-                        :alt="item.assignee.login"
-                        :title="`Assigned to @${item.assignee.login}`"
-                        class="user-avatar"
-                      />
+                      <a
+                        :href="`https://github.com/${item.assignee.login}`"
+                        class="avatar-link"
+                        @click.stop="handleRepoClick"
+                        @auxclick.stop
+                      >
+                        <img
+                          :src="item.assignee.avatar_url"
+                          :alt="item.assignee.login"
+                          :title="`Assigned to @${item.assignee.login}`"
+                          class="user-avatar"
+                        />
+                      </a>
                     </template>
                   </div>
                   <span v-if="!repoFilter" class="repo-parent"
@@ -442,6 +472,8 @@
               :key="`non-indexed-${repo.id}`"
               class="result-item type-repo non-indexed"
               :title="repo.description || ''"
+              @click="handleRowClick($event, { url: repo.html_url })"
+              @auxclick="handleRowAuxClick($event, { url: repo.html_url })"
             >
               <div class="result-icon">
                 <svg
@@ -473,14 +505,14 @@
                 </svg>
               </div>
               <div class="result-content">
-                <a :href="repo.html_url" class="result-title" @click="handleRepoClick">
+                <a :href="repo.html_url" class="result-title" @click.stop="handleRepoClick" @auxclick.stop>
                   {{ formatRepoName(repo.full_name) }}
                 </a>
               </div>
               <button
                 class="add-to-index-btn"
                 title="Add to index (will sync issues/PRs)"
-                @click.prevent="addRepoToIndex(repo.id)"
+                @click.prevent.stop="addRepoToIndex(repo.id)"
               >
                 <svg viewBox="0 0 16 16" width="14" height="14">
                   <path
@@ -892,18 +924,21 @@ const nonIndexedRepos = computed(() => {
  * Dynamic search placeholder based on user preferences
  */
 const searchPlaceholder = computed(() => {
-  const parts = ['repositories'];
+  // When drilled into a repo, we only search PRs/issues inside it
+  const parts: string[] = repoFilter.value ? [] : ['repositories'];
 
   if (preferences.value.importPullRequests) {
-    parts.push('pull requests');
+    parts.push('PRs');
   }
 
   if (preferences.value.importIssues) {
     parts.push('issues');
   }
 
-  if (parts.length === 1) {
-    return 'Search repositories...';
+  if (parts.length === 0) {
+    return 'Search...';
+  } else if (parts.length === 1) {
+    return `Search ${parts[0]}...`;
   } else if (parts.length === 2) {
     return `Search ${parts[0]} and ${parts[1]}...`;
   } else {
@@ -1097,18 +1132,22 @@ function navigateToFocusedItem(newTab: boolean = false) {
   if (!item || item.type === 'skeleton') return;
 
   if (newTab) {
-    // Create a temporary anchor element to simulate Cmd+Click behavior
-    const link = document.createElement('a');
-    link.href = item.url;
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    openInNewTab(item.url);
   } else {
     window.location.href = item.url;
     hide();
   }
+}
+
+function openInNewTab(url: string) {
+  // Create a temporary anchor element to simulate Cmd+Click behavior
+  const link = document.createElement('a');
+  link.href = url;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
 
 // Debounce search query to decouple typing from filtering
@@ -1629,6 +1668,31 @@ function handleRepoClick(event: MouseEvent) {
   }
   // Regular click - close the palette
   hide();
+}
+
+/**
+ * Handle click on a result row's free space — navigate like the title link.
+ * Cmd/Ctrl+click opens in a new tab and keeps the palette open.
+ */
+function handleRowClick(event: MouseEvent, item: { url: string; type?: string }) {
+  if (item.type === 'skeleton' || !item.url) return;
+  if (event.ctrlKey || event.metaKey) {
+    openInNewTab(item.url);
+    return;
+  }
+  window.location.href = item.url;
+  hide();
+}
+
+/**
+ * Middle-click on a result row — open in a new tab, keep the palette open
+ */
+function handleRowAuxClick(event: MouseEvent, item: { url: string; type?: string }) {
+  if (item.type === 'skeleton' || !item.url) return;
+  if (event.button === 1) {
+    event.preventDefault();
+    openInNewTab(item.url);
+  }
 }
 
 /**
@@ -2428,6 +2492,11 @@ defineExpose({
   line-height: 22px;
 }
 
+.avatar-link {
+  display: flex;
+  align-items: center;
+}
+
 .user-avatar {
   width: 16px;
   height: 16px;
@@ -2969,6 +3038,9 @@ defineExpose({
 
 .input-wrapper {
   flex: 1;
+  /* Allow shrinking below the input's intrinsic width so the repo-filter
+     prefix never pushes the filter buttons out of the bar */
+  min-width: 0;
   position: relative;
   display: flex;
   align-items: center;
