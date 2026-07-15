@@ -54,13 +54,18 @@
           :class="{ active: showOnlyMyContributions }"
           :title="
             showOnlyMyContributions
-              ? 'Showing only my contributions (click to show all)'
-              : 'Show all (click to filter only my contributions)'
+              ? 'Showing only my contributions (click to show everybody) · Alt+0'
+              : 'Showing everybody (click to filter only my contributions) · Alt+0'
           "
           @click="toggleMyContributionsFilter"
         >
-          <!-- Avatar stack: show multiple avatars in "All" mode -->
-          <div v-if="!showOnlyMyContributions" class="avatar-stack">
+          <!-- Avatar stack: show multiple avatars in "All" mode.
+               Width hugs the actual avatars: 16px base + 45% overlap step each -->
+          <div
+            v-if="!showOnlyMyContributions"
+            class="avatar-stack"
+            :style="{ width: `${16 + otherContributors.length * 7.2}px` }"
+          >
             <img
               v-if="syncStatus?.accountLogin"
               :src="`https://github.com/${syncStatus.accountLogin}.png?size=40`"
@@ -89,7 +94,9 @@
               d="M10.561 8.073a6.005 6.005 0 0 1 3.432 5.142.75.75 0 1 1-1.498.07 4.5 4.5 0 0 0-8.99 0 .75.75 0 0 1-1.498-.07 6.004 6.004 0 0 1 3.431-5.142 3.999 3.999 0 1 1 5.123 0ZM10.5 5a2.5 2.5 0 1 0-5 0 2.5 2.5 0 0 0 5 0Z"
             />
           </svg>
-          <span class="filter-label">{{ showOnlyMyContributions ? 'Just me' : 'All' }}</span>
+          <!-- No fixed width here: this is the leftmost button, so resizing only
+               moves its own left edge without shifting the other buttons -->
+          <span class="filter-label">{{ showOnlyMyContributions ? 'Just me' : 'Everybody' }}</span>
         </button>
         <!-- Filter: Only Visited -->
         <button
@@ -97,8 +104,8 @@
           :class="{ active: showOnlyVisited }"
           :title="
             showOnlyVisited
-              ? 'Showing only visited items (click to show all)'
-              : 'Show all (click to show only visited)'
+              ? 'Showing only visited items (click to show all) · Alt+-'
+              : 'Show all (click to show only visited) · Alt+-'
           "
           @click="toggleVisitedFilter"
         >
@@ -107,7 +114,10 @@
               d="M8 2c1.981 0 3.671.992 4.933 2.078 1.27 1.091 2.187 2.345 2.637 3.023a1.62 1.62 0 0 1 0 1.798c-.45.678-1.367 1.932-2.637 3.023C11.67 13.008 9.981 14 8 14c-1.981 0-3.671-.992-4.933-2.078C1.797 10.83.88 9.576.43 8.898a1.62 1.62 0 0 1 0-1.798c.45-.677 1.367-1.931 2.637-3.022C4.33 2.992 6.019 2 8 2ZM1.679 7.932a.12.12 0 0 0 0 .136c.411.622 1.241 1.75 2.366 2.717C5.176 11.758 6.527 12.5 8 12.5c1.473 0 2.825-.742 3.955-1.715 1.124-.967 1.954-2.096 2.366-2.717a.12.12 0 0 0 0-.136c-.412-.621-1.242-1.75-2.366-2.717C10.824 4.242 9.473 3.5 8 3.5c-1.473 0-2.825.742-3.955 1.715-1.124.967-1.954 2.096-2.366 2.717ZM8 10a2 2 0 1 1-.001-3.999A2 2 0 0 1 8 10Z"
             />
           </svg>
-          <span class="filter-label">{{ showOnlyVisited ? 'Visited' : 'All' }}</span>
+          <span class="filter-label filter-label-fixed">
+            <span class="label-sizer" aria-hidden="true">Visited</span>
+            <span class="label-current">{{ showOnlyVisited ? 'Visited' : 'All' }}</span>
+          </span>
         </button>
         <!-- Filter: PR/Issue state (any → open → closed) -->
         <button
@@ -115,42 +125,43 @@
           :class="{ active: stateFilter !== 'any' }"
           :title="
             stateFilter === 'any'
-              ? 'Showing open and closed items (click to show only open)'
+              ? 'Showing both open and closed items (click to show only open) · Alt+='
               : stateFilter === 'open'
-                ? 'Showing only open items (click to show only closed)'
-                : 'Showing only closed items (click to show open and closed)'
+                ? 'Showing only open items (click to show only closed) · Alt+='
+                : 'Showing only closed items (click to show open and closed) · Alt+='
           "
           @click="toggleStateFilter"
         >
-          <!-- Open icon (issue-opened octicon) -->
+          <!-- Open icon (git-pull-request octicon, green) -->
           <svg
+            class="state-open"
             viewBox="0 0 16 16"
             width="16"
             height="16"
             :class="{ dimmed: stateFilter === 'closed' }"
           >
-            <path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z" />
             <path
-              d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"
+              d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"
             />
           </svg>
-          <!-- Closed icon (issue-closed octicon) -->
+          <!-- Closed icon (git-merge octicon, purple) -->
           <svg
+            class="state-merged"
             viewBox="0 0 16 16"
             width="16"
             height="16"
             :class="{ dimmed: stateFilter === 'open' }"
           >
             <path
-              d="M11.28 6.78a.75.75 0 0 0-1.06-1.06L7.25 8.69 5.78 7.22a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l3.5-3.5Z"
-            />
-            <path
-              d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0Zm-1.5 0a6.5 6.5 0 1 0-13 0 6.5 6.5 0 0 0 13 0Z"
+              d="M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5-4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 3.25a.75.75 0 1 0 0 .005V3.25Z"
             />
           </svg>
-          <span class="filter-label">{{
-            stateFilter === 'any' ? 'Any' : stateFilter === 'open' ? 'Open' : 'Closed'
-          }}</span>
+          <span class="filter-label filter-label-fixed">
+            <span class="label-sizer" aria-hidden="true">Closed</span>
+            <span class="label-current">{{
+              stateFilter === 'any' ? 'Both' : stateFilter === 'open' ? 'Open' : 'Closed'
+            }}</span>
+          </span>
         </button>
       </div>
 
@@ -1875,6 +1886,11 @@ useKeyboardShortcuts(
     },
     enterFocusedMode: () => enterFocusedMode(),
     exitFocusedMode: () => exitFocusedMode(),
+    toggleFilter: (index) => {
+      if (index === 1) toggleMyContributionsFilter();
+      else if (index === 2) toggleVisitedFilter();
+      else toggleStateFilter();
+    },
   },
   () => panelMode.value !== 'HIDDEN',
 );
@@ -2061,6 +2077,37 @@ defineExpose({
 /* State filter: dim the icon of the state that's filtered out */
 .filter-button svg.dimmed {
   opacity: 0.3;
+}
+
+/* Filter labels: an invisible sizer (the button's widest word) fixes the width
+   so buttons never jump when the label changes. Text is right-aligned with a
+   small gap so the widest word never sticks to the icons. */
+.filter-label-fixed {
+  display: inline-grid;
+  text-align: right;
+  margin-left: 3px;
+}
+
+.label-sizer {
+  visibility: hidden;
+  grid-area: 1 / 1;
+}
+
+.label-current {
+  grid-area: 1 / 1;
+}
+
+/* State filter icons keep GitHub's PR state colors (same as result rows) */
+.filter-button svg.state-open,
+.filter-button.active svg.state-open,
+.filter-button:hover svg.state-open {
+  fill: #1a7f37;
+}
+
+.filter-button svg.state-merged,
+.filter-button.active svg.state-merged,
+.filter-button:hover svg.state-merged {
+  fill: #8250df;
 }
 
 /* (2) Main content area */
@@ -2699,6 +2746,18 @@ defineExpose({
 
 .dark-theme .filter-button:hover svg {
   fill: var(--fgColor-accent);
+}
+
+.dark-theme .filter-button svg.state-open,
+.dark-theme .filter-button.active svg.state-open,
+.dark-theme .filter-button:hover svg.state-open {
+  fill: #56d364;
+}
+
+.dark-theme .filter-button svg.state-merged,
+.dark-theme .filter-button.active svg.state-merged,
+.dark-theme .filter-button:hover svg.state-merged {
+  fill: #a371f7;
 }
 
 .dark-theme .filter-avatar {
