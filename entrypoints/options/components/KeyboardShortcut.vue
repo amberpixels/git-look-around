@@ -47,7 +47,9 @@
         />
       </div>
 
-      <p v-if="saved" class="warning small">⚠️ Extension will reload to apply changes...</p>
+      <p v-if="saved" class="success small">
+        ✓ Saved. Refresh the page where you want to use the hotkey.
+      </p>
     </div>
   </div>
 </template>
@@ -192,8 +194,8 @@ function showSavedMessage() {
   margin-top: 8px;
 }
 
-.warning {
-  color: #d29922;
+.success {
+  color: #2ea44f;
   font-size: 13px;
   margin-top: 8px;
 }

@@ -239,8 +239,6 @@ const hotkeyPreferences = ref<HotkeyPreferences>({
   mode: 'github-only',
   customHosts: [],
 });
-const hotkeyPreferencesSaved = ref(false);
-const reloadTimeoutId = ref<number | null>(null);
 const availableOrgs = ref<CategorizedOrganizations>({
   myOrgs: [],
   contributingOrgs: [],
@@ -470,26 +468,9 @@ async function saveDebugModeFlag() {
 }
 
 async function onModeChange() {
-  // Cancel any pending reload BEFORE saving — prevents a previous call's
-  // reload from firing while our save is in-flight
-  if (reloadTimeoutId.value !== null) {
-    window.clearTimeout(reloadTimeoutId.value);
-    reloadTimeoutId.value = null;
-  }
-
-  // Save preferences
+  // No extension reload needed: the content script matches all URLs and
+  // re-reads these preferences on each page load
   await saveHotkeyPreferences(hotkeyPreferences.value);
-  hotkeyPreferencesSaved.value = true;
-
-  // Cancel any reload scheduled by a concurrent call while we were saving
-  if (reloadTimeoutId.value !== null) {
-    window.clearTimeout(reloadTimeoutId.value);
-  }
-
-  // Schedule extension reload to apply changes
-  reloadTimeoutId.value = window.setTimeout(() => {
-    browser.runtime.reload();
-  }, 1500);
 }
 
 async function saveOrgFilters() {
