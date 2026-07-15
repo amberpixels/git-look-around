@@ -548,7 +548,77 @@
         <div v-if="showRateLimitWarning" class="rate-limit-warning" :title="rateLimitTooltip">
           ⚠️
         </div>
+
+        <!-- Help toggle (bottom-right corner) -->
+        <button
+          class="help-button"
+          :class="{ active: showHelp }"
+          type="button"
+          title="Keyboard shortcuts · Alt+?"
+          aria-label="Keyboard shortcuts"
+          @click="toggleHelp"
+        >
+          <svg viewBox="0 0 16 16" width="16" height="16">
+            <path
+              d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.92 6.085h.001a.749.749 0 1 1-1.342-.67c.169-.339.436-.701.849-.977C6.845 4.16 7.369 4 8 4a2.756 2.756 0 0 1 1.637.525c.503.377.863.965.863 1.725 0 .448-.115.83-.329 1.15-.205.307-.47.513-.692.662-.109.072-.22.138-.313.195l-.006.004a6.24 6.24 0 0 0-.26.16.952.952 0 0 0-.276.245.75.75 0 0 1-1.248-.832c.184-.264.42-.489.692-.661.111-.071.223-.138.317-.195l.007-.004c.098-.06.178-.11.258-.161a.969.969 0 0 0 .277-.245C8.96 6.42 9 6.312 9 6.25c0-.244-.101-.42-.26-.54A1.267 1.267 0 0 0 8 5.5c-.369 0-.61.09-.77.211a1.02 1.02 0 0 0-.312.375ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"
+            ></path>
+          </svg>
+        </button>
       </div>
+
+      <!-- Help cheat-sheet popover (anchored to the bottom-right help button) -->
+      <template v-if="showHelp">
+        <div class="help-backdrop" @click="closeHelp"></div>
+        <div class="help-popover" role="dialog" aria-label="Keyboard shortcuts">
+          <div class="help-popover-title">Keyboard shortcuts</div>
+          <div class="help-group">
+            <div class="help-row">
+              <span class="help-keys"><kbd>↑</kbd><kbd>↓</kbd></span>
+              <span class="help-desc">Move up / down</span>
+            </div>
+            <div class="help-row">
+              <span class="help-keys"><kbd>→</kbd></span>
+              <span class="help-desc">Open repo's PRs &amp; issues</span>
+            </div>
+            <div class="help-row">
+              <span class="help-keys"><kbd>←</kbd></span>
+              <span class="help-desc">Back</span>
+            </div>
+            <div class="help-row">
+              <span class="help-keys"><kbd>↵</kbd></span>
+              <span class="help-desc"
+                >Open <span class="help-desc-dim">· <kbd>⌘</kbd><kbd>↵</kbd> new tab</span></span
+              >
+            </div>
+          </div>
+          <div class="help-divider"></div>
+          <div class="help-group">
+            <div class="help-row">
+              <span class="help-keys"><kbd>Alt</kbd><kbd>0</kbd></span>
+              <span class="help-desc">Everybody / Just me</span>
+            </div>
+            <div class="help-row">
+              <span class="help-keys"><kbd>Alt</kbd><kbd>-</kbd></span>
+              <span class="help-desc">All / Visited</span>
+            </div>
+            <div class="help-row">
+              <span class="help-keys"><kbd>Alt</kbd><kbd>=</kbd></span>
+              <span class="help-desc">Open / Closed / Both</span>
+            </div>
+          </div>
+          <div class="help-divider"></div>
+          <div class="help-group">
+            <div class="help-row">
+              <span class="help-keys"><kbd>Alt</kbd><kbd>?</kbd></span>
+              <span class="help-desc">Toggle this help</span>
+            </div>
+            <div class="help-row">
+              <span class="help-keys"><kbd>Esc</kbd></span>
+              <span class="help-desc">Close</span>
+            </div>
+          </div>
+        </div>
+      </template>
     </div>
   </div>
 </template>
@@ -576,6 +646,9 @@ const debouncedSearchQuery = ref(''); // Debounced value (used for filtering to 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const searchInputRef = ref<any>(null);
 const isDarkTheme = ref(false);
+
+// Help cheat-sheet popover visibility (toggled by the (?) button and Alt+?)
+const showHelp = ref(false);
 
 // Filter: Only show my contributions
 const showOnlyMyContributions = ref(true); // Enabled by default
@@ -1564,6 +1637,7 @@ async function show() {
 async function hide() {
   await debugLog('[Git Look-Around] State: hide');
   panelMode.value = 'HIDDEN';
+  closeHelp();
   sendMessage(MessageType.SET_QUICK_CHECK_IDLE);
 }
 
@@ -1624,6 +1698,20 @@ async function handleCacheUpdate(results: SearchResultItem[] | null) {
 
   // Also refresh search results
   fetchSearchResults(normalizedSearchQuery.value);
+}
+
+/**
+ * Toggle the help cheat-sheet popover
+ */
+function toggleHelp() {
+  showHelp.value = !showHelp.value;
+}
+
+/**
+ * Close the help cheat-sheet popover (no-op if already closed)
+ */
+function closeHelp() {
+  showHelp.value = false;
 }
 
 /**
@@ -1916,12 +2004,24 @@ function handleBackdropClick(e: MouseEvent) {
 
 useKeyboardShortcuts(
   {
-    moveNext: () => moveNext(),
-    movePrev: () => movePrev(),
+    moveNext: () => {
+      closeHelp();
+      moveNext();
+    },
+    movePrev: () => {
+      closeHelp();
+      movePrev();
+    },
     select: (newTab) => navigateToFocusedTarget(newTab),
     tab: () => handleTab(),
     dismiss: async () => {
       await debugLog('[Git Look-Around] Action: dismiss', { panelMode: panelMode.value });
+
+      // Help popover takes priority: Escape closes it first
+      if (showHelp.value) {
+        closeHelp();
+        return;
+      }
 
       // If in nested mode, exit nested mode first
       if (repoFilter.value) {
@@ -1943,18 +2043,23 @@ useKeyboardShortcuts(
     },
     focusInput: () => searchInputRef.value?.focus(),
     onType: (char) => {
+      closeHelp();
       searchInputRef.value?.focus();
       nextTick(() => {
         searchQuery.value += char;
       });
     },
-    enterFocusedMode: () => enterFocusedMode(),
+    enterFocusedMode: () => {
+      closeHelp();
+      enterFocusedMode();
+    },
     exitFocusedMode: () => exitFocusedMode(),
     toggleFilter: (index) => {
       if (index === 1) toggleMyContributionsFilter();
       else if (index === 2) toggleVisitedFilter();
       else toggleStateFilter();
     },
+    toggleHelp: () => toggleHelp(),
   },
   () => panelMode.value !== 'HIDDEN',
 );
@@ -1993,6 +2098,7 @@ defineExpose({
 }
 
 .git-look-around-popup {
+  position: relative;
   background: var(--bgColor-muted);
   border: 1px solid var(--borderColor-default);
   border-radius: 12px;
@@ -3073,5 +3179,152 @@ defineExpose({
 
 .dark-theme .ghost-text-visible {
   color: #6e7681;
+}
+
+/* ── Help: (?) button + keyboard cheat-sheet popover ────────────────────── */
+
+.help-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  margin-left: 8px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--fgColor-muted);
+  cursor: pointer;
+  opacity: 0.6;
+  transition:
+    opacity 0.15s,
+    color 0.15s,
+    background-color 0.15s;
+}
+
+.help-button svg {
+  fill: currentColor;
+}
+
+.help-button:hover,
+.help-button.active {
+  opacity: 1;
+  color: var(--fgColor-accent);
+}
+
+.help-button.active {
+  background: var(--bgColor-accent-muted);
+}
+
+/* Transparent click-catcher so clicking anywhere dismisses the popover */
+.help-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+}
+
+.help-popover {
+  position: absolute;
+  right: 12px;
+  bottom: 46px;
+  z-index: 11;
+  width: 260px;
+  max-height: calc(70vh - 80px);
+  overflow-y: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--borderColor-default);
+  border-radius: 10px;
+  background: white;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  font-size: 12px;
+  color: var(--fgColor-default);
+  animation: help-pop-in 0.12s ease-out;
+}
+
+@keyframes help-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.help-popover-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fgColor-muted);
+  margin-bottom: 8px;
+}
+
+.help-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.help-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.help-keys {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.help-desc {
+  color: var(--fgColor-default);
+  text-align: right;
+}
+
+.help-desc-dim {
+  color: var(--fgColor-muted);
+}
+
+.help-divider {
+  height: 1px;
+  margin: 8px 0;
+  background: var(--borderColor-default);
+}
+
+.help-popover kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--borderColor-default);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--bgColor-muted);
+  color: var(--fgColor-muted);
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1;
+}
+
+/* Dark theme */
+.dark-theme .help-popover {
+  background: var(--bgColor-emphasis);
+  border-color: var(--borderColor-default);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.dark-theme .help-popover kbd {
+  background: var(--bgColor-neutral-muted);
+  border-color: var(--borderColor-default);
+  color: var(--fgColor-default);
 }
 </style>
