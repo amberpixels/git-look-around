@@ -1,6 +1,6 @@
 # Privacy Policy for GitHub Look-Around
 
-**Last Updated:** December 17, 2025
+**Last Updated:** July 15, 2026
 
 ## Overview
 
@@ -11,7 +11,7 @@ GitHub Look-Around is a browser extension that provides a command palette for qu
 ### 1. GitHub Personal Access Token
 - **What:** Your GitHub personal access token that you provide during setup
 - **Why:** To authenticate API requests to GitHub on your behalf
-- **Storage:** Stored locally in your browser's encrypted storage (browser.storage.local)
+- **Storage:** Stored locally in your browser's extension storage (browser.storage.local)
 - **Sharing:** Never shared with anyone. Only sent directly to GitHub's API (api.github.com) for authentication
 
 ### 2. GitHub Data (Repositories, Pull Requests, Issues)
@@ -69,7 +69,7 @@ All data remains on your device. We have no servers, no backend, and no data col
 
 ## Data Security
 
-- Your GitHub token is stored in browser.storage.local, which is encrypted by the browser
+- Your GitHub token is stored locally in browser.storage.local and never leaves your device except for direct, HTTPS-secured API calls to GitHub
 - All data is stored locally in your browser (IndexedDB and browser.storage)
 - API calls to GitHub use HTTPS for secure transmission
 - The extension follows the principle of least privilege - it only requests permissions necessary for its functionality
