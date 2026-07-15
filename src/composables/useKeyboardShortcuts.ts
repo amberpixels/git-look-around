@@ -12,6 +12,7 @@ export interface KeyboardActions {
   enterFocusedMode: () => void;
   exitFocusedMode: () => void;
   toggleFilter: (index: 1 | 2 | 3) => void;
+  toggleHelp: () => void;
 }
 
 export function useKeyboardShortcuts(actions: KeyboardActions, isVisible: () => boolean) {
@@ -22,6 +23,17 @@ export function useKeyboardShortcuts(actions: KeyboardActions, isVisible: () => 
     }
 
     debugLogSync('[Git Look-Around] Composable: handleKeydown', e.key);
+
+    // Help toggle: Alt+? — matched by physical key (e.code === 'Slash') so it
+    // works regardless of Shift and across layouts, mirroring the filter keys
+    // below. On macOS Option+? would otherwise insert a special char (¿).
+    if (e.altKey && !e.metaKey && !e.ctrlKey && e.code === 'Slash') {
+      debugLogSync('[Git Look-Around] Shortcut: toggle help');
+      e.preventDefault();
+      e.stopPropagation();
+      actions.toggleHelp();
+      return;
+    }
 
     // Filter toggles: Alt+0/-/= — the three rightmost number-row keys before
     // Backspace (works while typing too). Match physical keys via e.code — on
