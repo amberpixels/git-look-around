@@ -11,6 +11,7 @@ export interface KeyboardActions {
   tab: () => void;
   enterFocusedMode: () => void;
   exitFocusedMode: () => void;
+  toggleFilter: (index: 1 | 2 | 3) => void;
 }
 
 export function useKeyboardShortcuts(actions: KeyboardActions, isVisible: () => boolean) {
@@ -21,6 +22,25 @@ export function useKeyboardShortcuts(actions: KeyboardActions, isVisible: () => 
     }
 
     debugLogSync('[Git Look-Around] Composable: handleKeydown', e.key);
+
+    // Filter toggles: Alt+0/-/= — the three rightmost number-row keys before
+    // Backspace (works while typing too). Match physical keys via e.code — on
+    // macOS Option+key would otherwise insert a special char (º, –, ≠).
+    if (e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
+      const filterKeys: Record<string, 1 | 2 | 3> = {
+        Digit0: 1,
+        Minus: 2,
+        Equal: 3,
+      };
+      const filterIndex = filterKeys[e.code];
+      if (filterIndex) {
+        debugLogSync('[Git Look-Around] Shortcut: toggle filter', filterIndex);
+        e.preventDefault();
+        e.stopPropagation();
+        actions.toggleFilter(filterIndex);
+        return;
+      }
+    }
 
     // Check if user is typing in an input field, textarea, or contenteditable element
     const target = e.target as HTMLElement;
